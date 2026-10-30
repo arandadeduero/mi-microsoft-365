@@ -26,20 +26,20 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@aws-sdk/client-ses": "^3.1148.0",
-    "@azure/msal-node": "^7.0.1",
-    "axios": "^1.20.0",
-    "dotenv": "^18.0.6",
-    "ejs": "^7.0.1",
-    "express": "^5.2.1",
+    "@aws-sdk/client-ses": "^3.1157.0",
+    "@azure/msal-node": "^7.1.1",
+    "axios": "^1.21.0",
+    "dotenv": "^18.0.9",
+    "ejs": "^7.0.2",
+    "express": "^5.3.0",
     "express-rate-limit": "^8.7.1",
     "express-session": "^1.19.0",
-    "multer": "^2.4.0",
+    "multer": "^2.5.0",
     "qrcode": "^1.5.4",
     "session-file-store": "^1.5.0"
   },
   "devDependencies": {
-    "ava": "^8.0.1",
+    "ava": "^8.1.2",
     "nodemon": "^3.1.14",
     "supertest": "^7.3.1"
   },
