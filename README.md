@@ -24,7 +24,7 @@ Portal interno de autoservicio para los usuarios de Microsoft 365 del Ayuntamien
 - ✅ **Enlace a la intranet** - La página de inicio, la de ayuda y el pie enlazan a la intranet de la organización
 - ✅ **Configuración regional** - Cada cuenta se vuelve a poner en hora de Madrid y en español en cada inicio de sesión
 - ✅ **Visor de auditoría** - Los administradores pueden leer y filtrar el registro de auditoría desde la aplicación, y exportarlo a CSV
-- ✅ **Panel de Informática** - Licencias compradas y libres, cuentas que necesitan atención (sin iniciar sesión, sin segundo factor, contraseña caducada, licencias mal asignadas), el centro de mensajes de Microsoft, las solicitudes de grupos sin decidir, y la lista del blog y los buzones compartidos editables desde la web
+- ✅ **Panel de Informática** - Licencias compradas y libres, cuentas que necesitan atención (sin iniciar sesión, sin segundo factor, contraseña caducada, licencias mal asignadas), el centro de mensajes de Microsoft, las solicitudes de grupos sin decidir, la ocupación de cada sala (quién la ha reservado y a quién ha convocado), y la lista del blog y los buzones compartidos editables desde la web
 - ✅ **Estado del servicio** - Un aviso en todas las páginas mientras Microsoft informa de una incidencia en Microsoft 365
 - ✅ **Respuestas automáticas** - Activar, desactivar o programar entre dos fechas las respuestas de fuera de la oficina
 - ✅ **Grupos** - Todos los grupos del inquilino con el estado de pertenencia; las solicitudes para entrar van a los propietarios del grupo, que aprueban o rechazan en la aplicación
@@ -153,6 +153,8 @@ Tras el registro verás la página de información general de la aplicación. **
   **«Mis inicios de sesión» necesita un permiso de aplicación y una licencia.** Añade `AuditLog.Read.All` como permiso de *Aplicación*, con consentimiento de administrador. Microsoft solo sirve el registro de inicios de sesión a los inquilinos con Entra ID P1 o P2. Sin cualquiera de las dos cosas, la página dice que el registro no está disponible. La aplicación solo lee el registro del usuario que ha iniciado sesión.
 
   **El centro de mensajes (`/admin/avisos`) necesita otro permiso de aplicación:** `ServiceMessage.Read.All`, con consentimiento de administrador. Y «Cuentas que necesitan atención» usa `AuditLog.Read.All` (último inicio de sesión, con Entra ID P1) y `UserAuthenticationMethod.Read.All` (segundo factor registrado), también de *Aplicación*; sin ellos, esas dos listas dicen que no se pueden saber.
+
+  **«Ocupación de salas» (`/admin/salas`) necesita el permiso de aplicación `Calendars.Read`,** con consentimiento de administrador; sin él, la página dice que no puede leer el calendario. Ese permiso deja a la aplicación leer el calendario de *cualquier* buzón, aunque el portal solo abre los que son salas. Para que Microsoft lo limite de verdad a las salas, restríngelo en Exchange Online (RBAC para aplicaciones, o una directiva de acceso de aplicación con `New-ApplicationAccessPolicy`) a un grupo que contenga solo los buzones de sala.
 
   **El aviso de estado del servicio necesita un permiso de aplicación.** Añade `ServiceHealth.Read.All` como permiso de *Aplicación*, con consentimiento de administrador. Sin él la aplicación funciona y simplemente nunca muestra el aviso.
 
@@ -575,6 +577,7 @@ Quién puede usar `/blog` no es una variable de entorno: se configura en `config
 | GET | `/admin/licencias` | Administradores | Licencias compradas, en uso y libres |
 | GET | `/admin/avisos` | Administradores | El centro de mensajes de Microsoft |
 | GET | `/admin/solicitudes` | Administradores | Solicitudes de grupos pendientes |
+| GET | `/admin/salas` | Administradores | El calendario de una sala, semana a semana: quién la reservó y a quién convocó |
 | GET, POST | `/admin/ajustes` | Administradores | Lista del blog y buzones compartidos |
 | GET | `/directorio` | Con sesión | Directorio del personal |
 | GET | `/directorio/export.csv` | Con sesión | El directorio para Excel |

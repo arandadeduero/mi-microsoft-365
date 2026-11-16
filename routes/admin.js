@@ -7,6 +7,7 @@
  * - /admin/licencias - Licenses bought and left
  * - /admin/avisos - Microsoft's message center
  * - /admin/solicitudes - Group requests nobody has decided on
+ * - /admin/salas - A room's calendar for a week: who booked it and who goes
  * - /admin/ajustes - The blog list and the shared mailboxes
  */
 
@@ -18,7 +19,8 @@ const { auditRequest, readAudit } = require('../services/auditService');
 const permissions = require('../config/permissions');
 const { SKU_NAMES } = require('../config/licenseCatalog');
 const { getAppToken } = require('../services/tokenService');
-const { getSubscribedSkus, getUsersForReview, getMfaRegistration } = require('../services/graphService');
+const { REGION } = require('../config/appConfig');
+const { getSubscribedSkus, getUsersForReview, getMfaRegistration, getRooms, getRoomEvents } = require('../services/graphService');
 const { reviewAccounts, describeLicenseStock } = require('../services/accountReview');
 const { getServiceMessages } = require('../services/messageCenterService');
 const { listPending } = require('../services/requestStore');
@@ -157,6 +159,74 @@ router.get('/admin/solicitudes', isAuthenticated, requireAdmin, (req, res, next)
     const now = Date.now();
     const pending = listPending().map(request => ({ ...request, days: Math.floor((now - new Date(request.createdAt).getTime()) / 86400000) }));
     res.render('admin-requests', { title: 'Solicitudes pendientes', currentPage: 'audit', pending });
+  } catch (error) {
+    next(error);
+  }
+});
+
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const addDays = (date, days) => new Date(Date.parse(`${date}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
+
+/**
+ * GET /admin/salas
+ * One room's calendar for a week, read with the app's token. The room comes
+ * from the list of rooms and nowhere else: that token opens every mailbox.
+ */
+router.get('/admin/salas', isAuthenticated, requireAdmin, async (req, res, next) => {
+  try {
+    const places = await getRooms(req.session.accessToken);
+    const rooms = places && places
+      .filter(place => place.emailAddress)
+      .map(place => ({ name: place.displayName || place.emailAddress, email: place.emailAddress, capacity: place.capacity || null }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'es'));
+    const wanted = String(req.query.room || '').toLowerCase();
+    const room = (rooms || []).find(candidate => candidate.email.toLowerCase() === wanted) || null;
+
+    // sv-SE formats as "2026-10-12"
+    const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Madrid' }).format(new Date());
+    const asked = DATE.test(req.query.week) && !Number.isNaN(Date.parse(req.query.week)) ? req.query.week : today;
+    const monday = addDays(asked, -((new Date(`${asked}T00:00:00Z`).getUTCDay() + 6) % 7));
+
+    // The period is asked in UTC, a day wider on each side; the days below keep what is theirs
+    const events = room
+      ? await getRoomEvents(await getAppToken(), room.email, `${addDays(monday, -1)}T00:00:00`, `${addDays(monday, 8)}T00:00:00`, REGION.timeZone)
+      : null;
+
+    const days = events && [0, 1, 2, 3, 4, 5, 6].map(offset => {
+      const date = addDays(monday, offset);
+      const next = addDays(date, 1);
+      return {
+        date,
+        events: events
+          // Times are local and to the minute, so text compares as time; multi-day events land on each of their days
+          .filter(event => !event.isCancelled && event.start.dateTime.slice(0, 16) < `${next}T00:00` && event.end.dateTime.slice(0, 16) > `${date}T00:00`)
+          .map(event => ({
+            from: event.isAllDay ? null : (event.start.dateTime.startsWith(date) ? event.start.dateTime.slice(11, 16) : '00:00'),
+            to: event.isAllDay ? null : (event.end.dateTime.startsWith(date) ? event.end.dateTime.slice(11, 16) : '24:00'),
+            subject: (event.subject || '').trim(),
+            organizer: event.organizer?.emailAddress || {},
+            // The room is an attendee of its own bookings
+            people: (event.attendees || []).filter(person => (person.emailAddress?.address || '').toLowerCase() !== room.email.toLowerCase()),
+            pending: event.showAs === 'tentative',
+            isPrivate: event.sensitivity === 'private' || event.sensitivity === 'confidential',
+            recurring: Boolean(event.type) && event.type !== 'singleInstance',
+            online: Boolean(event.isOnlineMeeting),
+            created: event.createdDateTime || null,
+          })),
+      };
+    });
+
+    res.render('admin-rooms', {
+      title: 'Ocupación de salas',
+      currentPage: 'audit',
+      rooms,
+      room,
+      today,
+      monday,
+      previous: addDays(monday, -7),
+      following: addDays(monday, 7),
+      days,
+    });
   } catch (error) {
     next(error);
   }

@@ -1,0 +1,107 @@
+<%- include('partials/header') %>
+
+<%
+  const RESPONSES = { accepted: 'ha aceptado', declined: 'ha rechazado', tentativelyAccepted: 'quizá', organizer: 'organiza' };
+  const dayName = (date, options) => new Date(date + 'T00:00:00Z').toLocaleDateString('es-ES', Object.assign({ timeZone: 'UTC' }, options));
+  const weekUrl = (week) => '/admin/salas?' + new URLSearchParams({ room: room.email, week });
+%>
+<main class="container py-4 page-shell">
+  <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+    <h1 class="h2 mb-0 page-title">Ocupación de salas</h1>
+  </div>
+
+  <p class="text-muted">
+    Cada sala es un buzón de Microsoft 365 con su propio calendario: reservarla es invitarla a una reunión. Aquí se ve ese calendario semana a semana, con quién hizo cada reserva y a quién convocó.
+    Las salas suelen sustituir el asunto de la reunión por el nombre de quien reserva, así que el asunto puede no ser el original. El texto de las convocatorias no se lee.
+  </p>
+
+  <div class="card shadow-sm border-0 app-panel mb-4">
+    <div class="card-body p-4">
+      <% if (!rooms) { %>
+        <p class="text-muted mb-0">Ahora mismo no se puede consultar la lista de salas.</p>
+      <% } else if (rooms.length === 0) { %>
+        <p class="text-muted mb-0">El Ayuntamiento no tiene salas dadas de alta en Microsoft 365.</p>
+      <% } else { %>
+        <form action="/admin/salas" method="GET" class="row g-3 align-items-end">
+          <div class="col-md-6">
+            <label for="room" class="form-label">Sala</label>
+            <select class="form-select" id="room" name="room" required>
+              <option value="">Elige una sala…</option>
+              <% rooms.forEach(function(option) { %>
+                <option value="<%= option.email %>"<%= room && room.email === option.email ? ' selected' : '' %>><%= option.name %><% if (option.capacity) { %> (<%= option.capacity %> personas)<% } %></option>
+              <% }); %>
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label for="week" class="form-label">Semana del día</label>
+            <input type="date" class="form-control" id="week" name="week" value="<%= monday %>">
+          </div>
+          <div class="col-md-2 d-grid">
+            <button type="submit" class="btn btn-primary">Ver</button>
+          </div>
+        </form>
+      <% } %>
+    </div>
+  </div>
+
+  <% if (room) { %>
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+      <h2 class="h4 mb-0"><%= room.name %> <span class="text-muted small"><%= room.email %></span></h2>
+      <div class="btn-group">
+        <a class="btn btn-outline-secondary" href="<%= weekUrl(previous) %>">← Semana anterior</a>
+        <a class="btn btn-outline-secondary" href="<%= weekUrl(today) %>">Hoy</a>
+        <a class="btn btn-outline-secondary" href="<%= weekUrl(following) %>">Semana siguiente →</a>
+      </div>
+    </div>
+
+    <% if (!days) { %>
+      <div class="alert alert-warning">No se ha podido leer el calendario de esta sala, así que no se sabe si tiene reservas. La aplicación necesita el permiso de aplicación <code>Calendars.Read</code>.</div>
+    <% } else { %>
+      <% days.forEach(function(day) { %>
+        <div class="card shadow-sm border-0 app-panel mb-3<%= day.date === today ? ' border-start border-primary border-3' : '' %>">
+          <div class="card-body p-4">
+            <h3 class="h6 text-capitalize<%= day.events.length ? '' : ' mb-0' %>">
+              <%= dayName(day.date, { weekday: 'long', day: 'numeric', month: 'long' }) %>
+              <% if (day.events.length === 0) { %><span class="text-muted fw-normal text-lowercase"> · libre todo el día</span><% } %>
+            </h3>
+            <% if (day.events.length > 0) { %>
+              <ul class="list-group list-group-flush">
+                <% day.events.forEach(function(event) { %>
+                  <li class="list-group-item px-0">
+                    <div class="row g-2">
+                      <div class="col-md-2 fw-semibold"><%= event.from ? event.from + ' – ' + event.to : 'Todo el día' %></div>
+                      <div class="col-md-10">
+                        <span class="fw-semibold"><%= event.subject || '(sin asunto)' %></span>
+                        <% if (event.pending) { %> <span class="badge bg-warning text-dark">Pendiente de aceptar</span><% } %>
+                        <% if (event.isPrivate) { %> <span class="badge bg-secondary">Privada</span><% } %>
+                        <% if (event.recurring) { %> <span class="badge bg-light text-dark border">Periódica</span><% } %>
+                        <% if (event.online) { %> <span class="badge bg-light text-dark border">Con Teams</span><% } %>
+                        <br>
+                        <span class="small">
+                          Reservada por <strong><%= event.organizer.name || event.organizer.address || 'alguien que no consta' %></strong><% if (event.organizer.name && event.organizer.address) { %> (<%= event.organizer.address %>)<% } %><% if (event.created) { %>
+                          <span class="text-muted">el <%= new Date(event.created).toLocaleDateString('es-ES', { timeZone: 'Europe/Madrid' }) %></span><% } %>
+                        </span>
+                        <% if (event.people.length > 0) { %>
+                          <br>
+                          <span class="small text-muted">
+                            Convocados (<%= event.people.length %>):
+                            <%= event.people.map(function(person) {
+                              const who = person.emailAddress && (person.emailAddress.name || person.emailAddress.address) || 'sin nombre';
+                              return who + ' — ' + (RESPONSES[person.status && person.status.response] || 'sin responder');
+                            }).join('; ') %>
+                          </span>
+                        <% } %>
+                      </div>
+                    </div>
+                  </li>
+                <% }); %>
+              </ul>
+            <% } %>
+          </div>
+        </div>
+      <% }); %>
+    <% } %>
+  <% } %>
+</main>
+
+<%- include('partials/footer') %>

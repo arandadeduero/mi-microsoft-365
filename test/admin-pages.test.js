@@ -84,7 +84,7 @@ test('license stock says what is running out, named from the catalog', t => {
 
 test.serial('the admin pages are for administrators only', async t => {
   const user = await signInAs(t, USER, { admin: false });
-  for (const path of ['/admin/cuentas', '/admin/licencias', '/admin/avisos', '/admin/solicitudes', '/admin/ajustes', '/admin/audit.csv']) {
+  for (const path of ['/admin/cuentas', '/admin/licencias', '/admin/avisos', '/admin/solicitudes', '/admin/salas', '/admin/ajustes', '/admin/audit.csv']) {
     await user.get(path).expect(403);
   }
   t.pass();
@@ -144,6 +144,58 @@ test.serial('GET /admin/avisos lists the message center, or says the permission 
   http.fail('get', '/serviceAnnouncement/messages', 403);
   const missing = await admin.get('/admin/avisos').expect(200);
   t.true(missing.text.includes('ServiceMessage.Read.All'));
+});
+
+test.serial('GET /admin/salas shows a room\'s week with who booked and who goes, read with the app\'s token', async t => {
+  const admin = await signInAs(t, ADMIN, { admin: true });
+  const SALA = 'sala.plenos@arandadeduero.es';
+  http.on('get', '/places/microsoft.graph.room', { value: [{ displayName: 'Sala de Plenos', emailAddress: SALA, capacity: 40 }] });
+  const person = (name, response) => ({ emailAddress: { name, address: `${name.toLowerCase()}@arandadeduero.es` }, status: { response } });
+  http.on('get', '/calendarView', { value: [
+    { subject: 'Pleno', organizer: { emailAddress: { name: 'Olga', address: 'olga@arandadeduero.es' } }, start: { dateTime: '2026-11-17T09:00:00.0000000' }, end: { dateTime: '2026-11-17T10:30:00.0000000' }, showAs: 'tentative', type: 'occurrence', attendees: [person('Bob', 'declined'), { emailAddress: { name: 'Sala de Plenos', address: SALA.toUpperCase() }, status: { response: 'accepted' } }] },
+    { subject: 'Feria', isAllDay: true, organizer: { emailAddress: { name: 'Fede' } }, start: { dateTime: '2026-11-21T00:00:00.0000000' }, end: { dateTime: '2026-11-23T00:00:00.0000000' }, attendees: [] },
+    { subject: 'Anulada', isCancelled: true, organizer: {}, start: { dateTime: '2026-11-18T09:00:00.0000000' }, end: { dateTime: '2026-11-18T10:00:00.0000000' } },
+    { subject: 'Otra semana', organizer: {}, start: { dateTime: '2026-11-23T08:00:00.0000000' }, end: { dateTime: '2026-11-23T09:00:00.0000000' } },
+  ] });
+
+  // No room chosen: nothing is read
+  const empty = await admin.get('/admin/salas').expect(200);
+  t.true(empty.text.includes('Sala de Plenos (40 personas)'));
+  t.is(http.callsTo('get', '/calendarView').length, 0);
+
+  // Any day of the week shows the week from its Monday
+  const res = await admin.get(`/admin/salas?room=${SALA}&week=2026-11-19`).expect(200);
+  const [call] = http.callsTo('get', '/calendarView');
+  t.true(call.url.endsWith(`/users/${encodeURIComponent(SALA)}/calendarView`));
+  t.is(call.config.headers.Authorization, 'Bearer app-token');
+  t.is(call.config.params.startDateTime, '2026-11-15T00:00:00');
+  t.is(call.config.params.endDateTime, '2026-11-24T00:00:00');
+  t.true(res.text.includes('09:00 – 10:30'));
+  t.true(res.text.includes('Reservada por <strong>Olga</strong> (olga@arandadeduero.es)'));
+  t.true(res.text.includes('Convocados (1):'));
+  t.true(res.text.includes('Bob — ha rechazado'));
+  t.true(res.text.includes('Pendiente de aceptar'));
+  t.true(res.text.includes('Periódica'));
+  // Saturday and Sunday, not the Monday it ends on at 00:00
+  t.is(res.text.split('Feria').length - 1, 2);
+  t.is(res.text.split('libre todo el día').length - 1, 4);
+  t.false(res.text.includes('Anulada'));
+  t.false(res.text.includes('Otra semana'));
+  t.true(res.text.includes('week=2026-11-09'));
+  t.true(res.text.includes('week=2026-11-23'));
+});
+
+test.serial('GET /admin/salas only opens mailboxes that are rooms, and a calendar it cannot read is not an empty one', async t => {
+  const admin = await signInAs(t, ADMIN, { admin: true });
+  http.on('get', '/places/microsoft.graph.room', { value: [{ displayName: 'Sala de Plenos', emailAddress: 'sala.plenos@arandadeduero.es' }] });
+  http.fail('get', '/calendarView', 403);
+
+  await admin.get('/admin/salas?room=alcalde@arandadeduero.es').expect(200);
+  t.is(http.callsTo('get', '/calendarView').length, 0);
+
+  const res = await admin.get('/admin/salas?room=sala.plenos@arandadeduero.es&week=nonsense').expect(200);
+  t.true(res.text.includes('Calendars.Read'));
+  t.false(res.text.includes('libre todo el día'));
 });
 
 test.serial('GET /admin/solicitudes shows every request still waiting, oldest first', async t => {

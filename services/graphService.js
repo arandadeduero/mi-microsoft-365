@@ -782,6 +782,36 @@ async function getSchedules(accessToken, addresses, start, end, timeZone) {
 }
 
 /**
+ * Get what is in a room's calendar for a period, with who booked and who goes
+ * @param {string} appToken - App-only token: no user may open a room's mailbox
+ * @param {string} address - The room's mailbox
+ * @param {string} start - UTC date and time, e.g. 2026-10-12T00:00:00
+ * @param {string} end - UTC date and time
+ * @param {string} timeZone - Time zone the events come back in, as Exchange names it
+ * @returns {Promise<Array|null>} Events, or null if they cannot be read
+ */
+async function getRoomEvents(appToken, address, start, end, timeZone) {
+  try {
+    return await getAllPages(`${GRAPH_API_BASE}/users/${encodeURIComponent(address)}/calendarView`, {
+      params: {
+        startDateTime: start,
+        endDateTime: end,
+        $select: 'subject,organizer,start,end,isAllDay,isCancelled,showAs,sensitivity,type,isOnlineMeeting,attendees,createdDateTime',
+        $orderby: 'start/dateTime',
+        $top: 100,
+      },
+      headers: {
+        Authorization: `Bearer ${appToken}`,
+        Prefer: `outlook.timezone="${timeZone}"`,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching room events:', error.response?.data || error.message);
+    return null;
+  }
+}
+
+/**
  * Get the sign-in methods the signed-in user has registered
  * @param {string} accessToken - Valid access token
  * @returns {Promise<Array|null>} Methods, or null if they cannot be read
@@ -1353,6 +1383,7 @@ module.exports = {
   canOpenMailbox,
   getRooms,
   getSchedules,
+  getRoomEvents,
   getAuthenticationMethods,
   getUserDevices,
   getAllUsers,
