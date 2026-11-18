@@ -8,6 +8,7 @@
  * - /admin/avisos - Microsoft's message center
  * - /admin/solicitudes - Group requests nobody has decided on
  * - /admin/salas - A room's calendar for a week: who booked it and who goes
+ * - /admin/comisiones - Calling a commission: the meeting, the room and the councillors
  * - /admin/ajustes - The blog list and the shared mailboxes
  */
 
@@ -20,7 +21,8 @@ const permissions = require('../config/permissions');
 const { SKU_NAMES } = require('../config/licenseCatalog');
 const { getAppToken } = require('../services/tokenService');
 const { REGION } = require('../config/appConfig');
-const { getSubscribedSkus, getUsersForReview, getMfaRegistration, getRooms, getRoomEvents } = require('../services/graphService');
+const { getSubscribedSkus, getUsersForReview, getMfaRegistration, getRooms, getRoomEvents, getMyCalendars, getListMembers, createCalendarEvent } = require('../services/graphService');
+const commissions = require('../config/commissions');
 const { reviewAccounts, describeLicenseStock } = require('../services/accountReview');
 const { getServiceMessages } = require('../services/messageCenterService');
 const { listPending } = require('../services/requestStore');
@@ -168,17 +170,24 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const addDays = (date, days) => new Date(Date.parse(`${date}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
 
 /**
+ * The rooms by name, or null when they cannot be read
+ */
+async function listRooms(accessToken) {
+  const places = await getRooms(accessToken);
+  return places && places
+    .filter(place => place.emailAddress)
+    .map(place => ({ name: place.displayName || place.emailAddress, email: place.emailAddress, capacity: place.capacity || null }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'es'));
+}
+
+/**
  * GET /admin/salas
  * One room's calendar for a week, read with the app's token. The room comes
  * from the list of rooms and nowhere else: that token opens every mailbox.
  */
 router.get('/admin/salas', isAuthenticated, requireAdmin, async (req, res, next) => {
   try {
-    const places = await getRooms(req.session.accessToken);
-    const rooms = places && places
-      .filter(place => place.emailAddress)
-      .map(place => ({ name: place.displayName || place.emailAddress, email: place.emailAddress, capacity: place.capacity || null }))
-      .sort((a, b) => a.name.localeCompare(b.name, 'es'));
+    const rooms = await listRooms(req.session.accessToken);
     const wanted = String(req.query.room || '').toLowerCase();
     const room = (rooms || []).find(candidate => candidate.email.toLowerCase() === wanted) || null;
 
@@ -227,6 +236,107 @@ router.get('/admin/salas', isAuthenticated, requireAdmin, async (req, res, next)
       following: addDays(monday, 7),
       days,
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+const LOCAL_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
+
+// The list a kind of meeting is called from
+const inviteesFor = (kind) => commissions.OTHER_MEETINGS[kind]?.invitees || commissions.INVITEES;
+
+/**
+ * What a meeting needs before it can be called: the calendar, the rooms that
+ * are big enough and who is in each list. `problem` says what stops every
+ * meeting; a list that could not be read has `people: null`, and nothing is
+ * assumed about it, so nobody is called to a meeting with no one invited.
+ */
+async function commissionSetup(accessToken) {
+  const calendars = await getMyCalendars(accessToken);
+  const calendar = (calendars || []).find(candidate => (candidate.name || '').toLowerCase() === commissions.CALENDAR_NAME.toLowerCase()) || null;
+  const rooms = ((await listRooms(accessToken)) || []).filter(room => room.capacity >= commissions.MIN_ROOM_CAPACITY);
+
+  const others = Object.keys(commissions.OTHER_MEETINGS);
+  const lists = [];
+  for (const address of new Set([commissions.INVITEES, ...others.map(inviteesFor)])) {
+    const members = await getListMembers(accessToken, address);
+    lists.push({
+      address,
+      kinds: [...(address === commissions.INVITEES ? ['Comisiones'] : []), ...others.filter(kind => inviteesFor(kind) === address)],
+      // One invitation per address, whatever nested lists repeat
+      people: members && [...new Map(members.filter(person => person.mail).map(person => [person.mail.toLowerCase(), { name: person.displayName || person.mail, email: person.mail }])).values()]
+        .sort((a, b) => a.name.localeCompare(b.name, 'es')),
+    });
+  }
+
+  let problem = null;
+  if (!calendars) problem = 'Ahora mismo no se pueden leer tus calendarios.';
+  else if (!calendar) problem = `No tienes ningún calendario llamado «${commissions.CALENDAR_NAME}». Las comisiones las convoca quien lo tiene en su buzón.`;
+  else if (calendar.canEdit === false) problem = `No puedes escribir en el calendario «${commissions.CALENDAR_NAME}».`;
+  else if (rooms.length === 0) problem = `No se ha encontrado ninguna sala para ${commissions.MIN_ROOM_CAPACITY} personas o más.`;
+
+  return { calendar, rooms, lists, problem };
+}
+
+/**
+ * GET /admin/comisiones
+ */
+router.get('/admin/comisiones', isAuthenticated, requireAdmin, async (req, res, next) => {
+  try {
+    const created = req.session.commissionCreated || null;
+    delete req.session.commissionCreated;
+    res.render('admin-commissions', {
+      title: 'Convocar una comisión',
+      currentPage: 'audit',
+      config: commissions,
+      created,
+      ...await commissionSetup(req.session.accessToken),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /admin/comisiones
+ * Put the meeting in the calendar; Exchange sends the invitations. Who is
+ * invited and which rooms may be chosen are read again here, never taken
+ * from the form.
+ */
+router.post('/admin/comisiones', isAuthenticated, requireAdmin, async (req, res, next) => {
+  try {
+    const { calendar, rooms, lists, problem } = await commissionSetup(req.session.accessToken);
+    if (problem) throw userError(409, problem);
+
+    const commission = [...commissions.COMMISSIONS, ...Object.keys(commissions.OTHER_MEETINGS)].find(name => name === req.body.commission);
+    const subject = commissions.COMMISSIONS.includes(commission) ? `Com ${commission}` : commission;
+    if (!commission) throw userError(400, 'Elige una comisión de la lista.');
+    const list = lists.find(candidate => candidate.address === inviteesFor(commission));
+    if (!list.people) throw userError(409, `No se ha podido leer quién está en ${list.address}, así que no se sabe a quién convocar.`);
+    if (list.people.length === 0) throw userError(409, `La lista ${list.address} no tiene a nadie con correo.`);
+    const invitees = list.people;
+    const room = rooms.find(candidate => candidate.email === req.body.room);
+    if (!room) throw userError(400, 'Elige una sala de la lista.');
+    const start = String(req.body.start || '');
+    if (!LOCAL_TIME.test(start) || Number.isNaN(Date.parse(`${start}:00Z`))) throw userError(400, 'Indica el día y la hora de inicio.');
+    // Clock arithmetic on the local time, done in UTC so no offset gets in
+    const end = new Date(Date.parse(`${start}:00Z`) + (commissions.OTHER_MEETINGS[commission]?.minutes || commissions.DURATION_MINUTES) * 60000).toISOString().slice(0, 19);
+
+    await createCalendarEvent(req.session.accessToken, calendar.id, {
+      subject,
+      start: { dateTime: `${start}:00`, timeZone: REGION.timeZone },
+      end: { dateTime: end, timeZone: REGION.timeZone },
+      location: { displayName: room.name, locationEmailAddress: room.email },
+      attendees: [
+        ...invitees.map(person => ({ emailAddress: { address: person.email, name: person.name }, type: 'required' })),
+        { emailAddress: { address: room.email, name: room.name }, type: 'resource' },
+      ],
+    });
+
+    auditRequest(req, 'admin.commission_called', { commission, start, room: room.email, invited: invitees.length });
+    req.session.commissionCreated = { subject, start, room: room.name, invited: invitees.length };
+    res.redirect('/admin/comisiones');
   } catch (error) {
     next(error);
   }

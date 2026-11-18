@@ -84,7 +84,7 @@ test('license stock says what is running out, named from the catalog', t => {
 
 test.serial('the admin pages are for administrators only', async t => {
   const user = await signInAs(t, USER, { admin: false });
-  for (const path of ['/admin/cuentas', '/admin/licencias', '/admin/avisos', '/admin/solicitudes', '/admin/salas', '/admin/ajustes', '/admin/audit.csv']) {
+  for (const path of ['/admin/cuentas', '/admin/licencias', '/admin/avisos', '/admin/solicitudes', '/admin/salas', '/admin/comisiones', '/admin/ajustes', '/admin/audit.csv']) {
     await user.get(path).expect(403);
   }
   t.pass();
@@ -196,6 +196,111 @@ test.serial('GET /admin/salas only opens mailboxes that are rooms, and a calenda
   const res = await admin.get('/admin/salas?room=sala.plenos@arandadeduero.es&week=nonsense').expect(200);
   t.true(res.text.includes('Calendars.Read'));
   t.false(res.text.includes('libre todo el día'));
+});
+
+// What Graph answers when everything a commission needs is in place
+function stubCommissionSetup() {
+  http.on('get', '/me/calendars', { value: [{ id: 'cal-main', name: 'Calendario' }, { id: 'cal-com', name: 'Comisiones y plenos', canEdit: true }] });
+  http.on('get', '/places/microsoft.graph.room', { value: [
+    { displayName: 'Sala de Plenos', emailAddress: 'sala.plenos@arandadeduero.es', capacity: 40 },
+    { displayName: 'Sala Pequeña', emailAddress: 'sala.pequena@arandadeduero.es', capacity: 4 },
+    { displayName: 'Sala Sin Aforo', emailAddress: 'sala.sinaforo@arandadeduero.es' },
+    { displayName: 'Casa Consistorial - Sala de Juntas', emailAddress: 'sala.juntas@arandadeduero.es', capacity: 12 },
+  ] });
+  http.on('get', '/v1.0/groups', ({ config }) => ({ value: [{ id: config.params.$filter.includes('eqgobierno') ? 'gov-id' : 'dist-id' }] }));
+  http.on('get', '/groups/gov-id/transitiveMembers/microsoft.graph.user', { value: [{ id: 'c1', displayName: 'Carmen Concejala', mail: 'carmen@arandadeduero.es' }] });
+  http.on('get', '/groups/dist-id/transitiveMembers/microsoft.graph.user', { value: [
+    { id: 'c1', displayName: 'Carmen Concejala', mail: 'carmen@arandadeduero.es' },
+    { id: 'c2', displayName: 'Blas Concejal', mail: 'blas@arandadeduero.es' },
+    { id: 'c2b', displayName: 'Blas Concejal', mail: 'BLAS@arandadeduero.es' },
+    { id: 'c3', displayName: 'Sin Correo', mail: null },
+  ] });
+  http.on('post', '/me/calendars/cal-com/events', { id: 'event-1' });
+}
+
+test.serial('POST /admin/comisiones puts the meeting in the calendar and invites each councillor and the room', async t => {
+  const admin = await signInAs(t, ADMIN, { admin: true });
+  stubCommissionSetup();
+
+  const page = await admin.get('/admin/comisiones').expect(200);
+  t.true(page.text.includes('<option value="Urbanismo">'));
+  // The Junta's usual room is offered with it; «Plenos» does not end in «pleno», so the plenary gets none
+  t.true(page.text.includes('<option value="JGL" data-room="sala.juntas@arandadeduero.es">'));
+  t.true(page.text.includes('<option value="Pleno">'));
+  // Nothing asks before sending; a far-off date only gets a notice
+  t.false(page.text.includes('data-confirm'));
+  t.true(page.text.includes('/js/commissions.js'));
+  t.true(page.text.includes('Sala de Plenos (40 personas)'));
+  t.false(page.text.includes('Sala Pequeña'));
+  t.false(page.text.includes('Sala Sin Aforo'));
+  t.true(page.text.includes('Comisiones, Pleno: a quién se invita (2)'));
+  t.true(page.text.includes('JGL: a quién se invita (1)'));
+  t.true(page.text.includes('Carmen Concejala'));
+  t.is(http.callsTo('get', '/v1.0/groups')[0].config.params.$filter, "mail eq 'dist-concejales2327@arandadeduero.es'");
+
+  const csrf = await getCsrfToken(admin);
+  const form = { _csrf: csrf, commission: 'Urbanismo', start: '2099-03-02T23:30', room: 'sala.plenos@arandadeduero.es' };
+  await admin.post('/admin/comisiones').type('form').send(form).expect(302).expect('Location', '/admin/comisiones');
+
+  const [call] = http.callsTo('post', '/me/calendars/cal-com/events');
+  t.is(call.config.headers.Authorization, 'Bearer user-token');
+  t.is(call.data.subject, 'Com Urbanismo');
+  t.deepEqual(call.data.start, { dateTime: '2099-03-02T23:30:00', timeZone: 'Romance Standard Time' });
+  // One hour later, across midnight
+  t.deepEqual(call.data.end, { dateTime: '2099-03-03T00:30:00', timeZone: 'Romance Standard Time' });
+  t.deepEqual(call.data.attendees.map(a => [a.emailAddress.address.toLowerCase(), a.type]), [
+    ['blas@arandadeduero.es', 'required'],
+    ['carmen@arandadeduero.es', 'required'],
+    ['sala.plenos@arandadeduero.es', 'resource'],
+  ]);
+  t.deepEqual(auditEvents('admin.commission_called').map(e => [e.commission, e.start, e.room, e.invited]), [['Urbanismo', '2099-03-02T23:30', 'sala.plenos@arandadeduero.es', 2]]);
+
+  const done = await admin.get('/admin/comisiones').expect(200);
+  t.true(done.text.includes('Se ha invitado a 2 personas'));
+
+  // A plenary is not a commission: its subject is its name
+  await admin.post('/admin/comisiones').type('form').send({ ...form, commission: 'Pleno' }).expect(302);
+  t.is(http.callsTo('post', '/me/calendars/cal-com/events')[1].data.subject, 'Pleno');
+  // Three hours from 23:30
+  t.is(http.callsTo('post', '/me/calendars/cal-com/events')[1].data.end.dateTime, '2099-03-03T02:30:00');
+
+  // The Junta is half an hour, and only for the government team
+  await admin.post('/admin/comisiones').type('form').send({ ...form, commission: 'JGL' }).expect(302);
+  const jgl = http.callsTo('post', '/me/calendars/cal-com/events')[2].data;
+  t.is(jgl.end.dateTime, '2099-03-03T00:00:00');
+  t.deepEqual(jgl.attendees.map(a => a.emailAddress.address), ['carmen@arandadeduero.es', 'sala.plenos@arandadeduero.es']);
+
+  // What the form may not choose
+  for (const bad of [{ commission: 'Fiestas' }, { room: 'sala.pequena@arandadeduero.es' }, { room: 'alcalde@arandadeduero.es' }, { start: 'mañana' }]) {
+    await admin.post('/admin/comisiones').type('form').send({ ...form, ...bad }).expect(400);
+  }
+  t.is(http.callsTo('post', '/me/calendars/cal-com/events').length, 3);
+});
+
+test.serial('/admin/comisiones calls nobody when the calendar or the list of councillors is missing', async t => {
+  const admin = await signInAs(t, ADMIN, { admin: true });
+  const csrf = await getCsrfToken(admin);
+  const form = { _csrf: csrf, commission: 'Cultura', start: '2099-03-02T08:30', room: 'sala.plenos@arandadeduero.es' };
+
+  stubCommissionSetup();
+  http.fail('get', '/groups/dist-id/transitiveMembers/microsoft.graph.user', 403);
+  const unread = await admin.get('/admin/comisiones').expect(200);
+  t.true(unread.text.includes('no se sabe a quién convocar'));
+  await admin.post('/admin/comisiones').type('form').send(form).expect(409);
+  // The other list is still there, so the Junta can be called
+  await admin.post('/admin/comisiones').type('form').send({ ...form, commission: 'JGL' }).expect(302);
+
+  http.reset();
+  http.on('get', '/v1.0/me', { displayName: 'Someone' });
+  http.on('get', ROLES, { value: [{ displayName: 'Global Administrator' }] });
+  stubCommissionSetup();
+  http.on('get', '/me/calendars', { value: [{ id: 'cal-main', name: 'Calendario' }] });
+  const missing = await admin.get('/admin/comisiones').expect(200);
+  t.true(missing.text.includes('No tienes ningún calendario llamado «Comisiones y plenos»'));
+  await admin.post('/admin/comisiones').type('form').send(form).expect(409);
+
+  t.is(http.calls.filter(c => c.method === 'post' && c.url.includes('/events')).length, 0);
+  t.is(auditEvents('admin.commission_called').filter(e => e.commission === 'Cultura').length, 0);
 });
 
 test.serial('GET /admin/solicitudes shows every request still waiting, oldest first', async t => {

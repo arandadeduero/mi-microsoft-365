@@ -24,7 +24,7 @@ Portal interno de autoservicio para los usuarios de Microsoft 365 del Ayuntamien
 - ✅ **Enlace a la intranet** - La página de inicio, la de ayuda y el pie enlazan a la intranet de la organización
 - ✅ **Configuración regional** - Cada cuenta se vuelve a poner en hora de Madrid y en español en cada inicio de sesión
 - ✅ **Visor de auditoría** - Los administradores pueden leer y filtrar el registro de auditoría desde la aplicación, y exportarlo a CSV
-- ✅ **Panel de Informática** - Licencias compradas y libres, cuentas que necesitan atención (sin iniciar sesión, sin segundo factor, contraseña caducada, licencias mal asignadas), el centro de mensajes de Microsoft, las solicitudes de grupos sin decidir, la ocupación de cada sala (quién la ha reservado y a quién ha convocado), y la lista del blog y los buzones compartidos editables desde la web
+- ✅ **Panel de Informática** - Licencias compradas y libres, cuentas que necesitan atención (sin iniciar sesión, sin segundo factor, contraseña caducada, licencias mal asignadas), el centro de mensajes de Microsoft, las solicitudes de grupos sin decidir, la ocupación de cada sala (quién la ha reservado y a quién ha convocado), la convocatoria de comisiones, plenos y juntas de gobierno (cada una con su duración, sala para 5 o más, invitación a cada persona de su lista de distribución), y la lista del blog y los buzones compartidos editables desde la web
 - ✅ **Estado del servicio** - Un aviso en todas las páginas mientras Microsoft informa de una incidencia en Microsoft 365
 - ✅ **Respuestas automáticas** - Activar, desactivar o programar entre dos fechas las respuestas de fuera de la oficina
 - ✅ **Grupos** - Todos los grupos del inquilino con el estado de pertenencia; las solicitudes para entrar van a los propietarios del grupo, que aprueban o rechazan en la aplicación
@@ -578,6 +578,7 @@ Quién puede usar `/blog` no es una variable de entorno: se configura en `config
 | GET | `/admin/avisos` | Administradores | El centro de mensajes de Microsoft |
 | GET | `/admin/solicitudes` | Administradores | Solicitudes de grupos pendientes |
 | GET | `/admin/salas` | Administradores | El calendario de una sala, semana a semana: quién la reservó y a quién convocó |
+| GET, POST | `/admin/comisiones` | Administradores | Convocar una comisión: crea la reunión en el calendario «Comisiones y plenos» de quien la convoca e invita a cada concejal y a la sala |
 | GET, POST | `/admin/ajustes` | Administradores | Lista del blog y buzones compartidos |
 | GET | `/directorio` | Con sesión | Directorio del personal |
 | GET | `/directorio/export.csv` | Con sesión | El directorio para Excel |
@@ -721,6 +722,7 @@ Cada acción que cambia algo, y cada inicio de sesión, se añade a un archivo p
 | `profile.update`, `profile.photo_update` | Cambian los datos o la foto del perfil |
 | `mail.auto_reply_update` | Cambian las respuestas automáticas (solo el estado, nunca el mensaje) |
 | `request.onboarding`, `request.offboarding`, `request.team`, `request.guest` | Una solicitud de alta, baja, equipo de Teams o invitado externo se envió a Informática (solo el tipo, nunca los datos de la persona) |
+| `admin.commission_called` | Un administrador convocó una comisión (cuál, cuándo, en qué sala y a cuántas personas se invitó) |
 | `admin.settings_updated` | Un administrador guardó la lista del blog o los buzones compartidos (cuántas entradas, no cuáles) |
 | `files.unshared` | El usuario dejó de compartir un archivo (el id del archivo y con quién estaba compartido, nunca su contenido) |
 | `calendar.shared`, `calendar.unshared` | El usuario compartió su calendario con alguien, o le retiró el acceso (con quién y qué podía ver) |

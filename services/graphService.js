@@ -812,6 +812,75 @@ async function getRoomEvents(appToken, address, start, end, timeZone) {
 }
 
 /**
+ * Get the calendars of the signed-in user
+ * @param {string} accessToken - Valid access token
+ * @returns {Promise<Array|null>} Calendars, or null if they cannot be read
+ */
+async function getMyCalendars(accessToken) {
+  try {
+    return await getAllPages(`${GRAPH_API_BASE}/me/calendars`, {
+      params: {
+        $select: 'id,name,canEdit',
+        $top: 100,
+      },
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching calendars:', error.response?.data || error.message);
+    return null;
+  }
+}
+
+/**
+ * Get the people inside a distribution list or group, nested groups included
+ * @param {string} accessToken - Valid access token
+ * @param {string} address - The list's email address
+ * @returns {Promise<Array|null>} Users, or null if the list is not found or cannot be read
+ */
+async function getListMembers(accessToken, address) {
+  try {
+    const headers = { Authorization: `Bearer ${accessToken}` };
+    const [group] = await getAllPages(`${GRAPH_API_BASE}/groups`, {
+      params: { $filter: `mail eq '${address.replace(/'/g, "''")}'`, $select: 'id' },
+      headers,
+    });
+    if (!group) return null;
+    return await getAllPages(`${GRAPH_API_BASE}/groups/${encodeURIComponent(group.id)}/transitiveMembers/microsoft.graph.user`, {
+      // Graph only casts transitive members as an advanced query
+      params: { $select: 'id,displayName,mail', $top: 999, $count: true },
+      headers: { ...headers, ConsistencyLevel: 'eventual' },
+    });
+  } catch (error) {
+    console.error(`Error fetching members of ${address}:`, error.response?.data || error.message);
+    return null;
+  }
+}
+
+/**
+ * Create an event in one of the signed-in user's calendars; Exchange invites its attendees
+ * @param {string} accessToken - Valid access token
+ * @param {string} calendarId - Calendar ID
+ * @param {Object} event - The event, as Graph takes it
+ * @returns {Promise<Object>} The created event
+ */
+async function createCalendarEvent(accessToken, calendarId, event) {
+  try {
+    const response = await axios.post(`${GRAPH_API_BASE}/me/calendars/${encodeURIComponent(calendarId)}/events`, event, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error creating calendar event:', error.response?.data || error.message);
+    throw graphError('Failed to create calendar event', error);
+  }
+}
+
+/**
  * Get the sign-in methods the signed-in user has registered
  * @param {string} accessToken - Valid access token
  * @returns {Promise<Array|null>} Methods, or null if they cannot be read
@@ -1384,6 +1453,9 @@ module.exports = {
   getRooms,
   getSchedules,
   getRoomEvents,
+  getMyCalendars,
+  getListMembers,
+  createCalendarEvent,
   getAuthenticationMethods,
   getUserDevices,
   getAllUsers,

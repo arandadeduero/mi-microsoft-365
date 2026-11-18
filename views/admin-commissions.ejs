@@ -1,0 +1,89 @@
+<%- include('partials/header') %>
+
+<%
+  // The room a kind of meeting is usually held in, if one of the rooms offered ends with its name
+  const usualRoom = (meeting) => (meeting.roomEndsWith && rooms.find(room => room.name.trim().toLowerCase().endsWith(meeting.roomEndsWith.toLowerCase())) || {}).email;
+%>
+<main class="container py-4 page-shell">
+  <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+    <h1 class="h2 mb-0 page-title">Convocar una comisión</h1>
+  </div>
+
+  <% if (created) { %>
+    <div class="alert alert-success">
+      Convocada: <strong><%= created.subject %></strong>, el <%= new Date(created.start + ':00Z').toLocaleString('es-ES', { timeZone: 'UTC', dateStyle: 'full', timeStyle: 'short' }) %> en <%= created.room %>.
+      Se ha invitado a <%= created.invited %> personas y a la sala.
+    </div>
+  <% } %>
+
+  <p class="text-muted">
+    Crea la reunión en tu calendario «<%= config.CALENDAR_NAME %>» y Outlook envía la invitación, en tu nombre, a cada concejal y a la sala.
+    Una lista de distribución es una dirección que reparte a varias personas; aquí se invita a cada una por separado, para que se vea quién acepta.
+    Una comisión dura <%= config.DURATION_MINUTES %> minutos<% Object.keys(config.OTHER_MEETINGS).forEach(function(name) { %>, <%= name %> <%= config.OTHER_MEETINGS[name].minutes %><% }); %>. Para cambiarla o anularla después, hazlo en Outlook: los convocados reciben el cambio.
+  </p>
+
+  <% if (problem) { %>
+    <div class="alert alert-warning"><%= problem %></div>
+  <% } else { %>
+    <div class="card shadow-sm border-0 app-panel mb-4">
+      <div class="card-body p-4">
+        <form action="/admin/comisiones" method="POST" class="row g-3">
+          <input type="hidden" name="_csrf" value="<%= csrfToken() %>">
+          <div class="col-md-4">
+            <label for="commission" class="form-label">Comisión</label>
+            <select class="form-select" id="commission" name="commission" required>
+              <option value="">Elige una comisión…</option>
+              <optgroup label="Comisiones">
+                <% config.COMMISSIONS.forEach(function(name) { %>
+                  <option value="<%= name %>"><%= name %></option>
+                <% }); %>
+              </optgroup>
+              <optgroup label="Otras sesiones">
+                <% Object.keys(config.OTHER_MEETINGS).forEach(function(name) { %>
+                  <option value="<%= name %>"<% if (usualRoom(config.OTHER_MEETINGS[name])) { %> data-room="<%= usualRoom(config.OTHER_MEETINGS[name]) %>"<% } %>><%= name %> (<%= config.OTHER_MEETINGS[name].minutes %> min)</option>
+                <% }); %>
+              </optgroup>
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label for="start" class="form-label">Inicio</label>
+            <input type="datetime-local" class="form-control" id="start" name="start" step="300" required aria-describedby="start-warning">
+            <div class="form-text text-warning-emphasis fw-semibold" id="start-warning" role="status"></div>
+          </div>
+          <div class="col-md-4">
+            <label for="room" class="form-label">Sala</label>
+            <select class="form-select" id="room" name="room" required>
+              <option value="">Elige una sala…</option>
+              <% rooms.forEach(function(room) { %>
+                <option value="<%= room.email %>"><%= room.name %> (<%= room.capacity %> personas)</option>
+              <% }); %>
+            </select>
+            <div class="form-text">Solo las salas para <%= config.MIN_ROOM_CAPACITY %> personas o más. Si está ocupada, la sala rechaza la invitación.</div>
+          </div>
+          <div class="col-12"><button type="submit" class="btn btn-primary">Convocar</button></div>
+        </form>
+      </div>
+    </div>
+
+    <% lists.forEach(function(list) { %>
+      <div class="card shadow-sm border-0 app-panel mb-3">
+        <div class="card-body p-4">
+          <h2 class="h5"><%= list.kinds.join(', ') %>: a quién se invita<% if (list.people) { %> (<%= list.people.length %>)<% } %></h2>
+          <% if (!list.people) { %>
+            <p class="text-warning-emphasis mb-0">No se ha podido leer quién está en <%= list.address %>, así que no se sabe a quién convocar. Hasta que se pueda, no se convoca.</p>
+          <% } else { %>
+            <p class="text-muted small">Quienes están ahora en <%= list.address %>.</p>
+            <ul class="list-unstyled row row-cols-1 row-cols-md-2 row-cols-lg-3 mb-0">
+              <% list.people.forEach(function(person) { %>
+                <li class="col"><%= person.name %> <span class="text-muted small"><%= person.email %></span></li>
+              <% }); %>
+            </ul>
+          <% } %>
+        </div>
+      </div>
+    <% }); %>
+  <% } %>
+</main>
+
+<script src="/js/commissions.js"></script>
+<%- include('partials/footer') %>
