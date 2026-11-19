@@ -25,9 +25,10 @@ const { compareEs } = require('../services/formatters');
 const {
   getAllUserData,
   getUserProfile,
+  getUserPhotoById,
   getAllTenantGroups,
   getGroupsWithMembership,
-  getAllUsers,
+  getLicensedUsers,
   getUsersWithManager,
   findUserByEmail,
   getUserForReset,
@@ -75,6 +76,15 @@ router.get('/', isAuthenticated, async (req, res, next) => {
       photoBase64 = `data:image/jpeg;base64,${userData.photo.toString('base64')}`;
     }
 
+    // Fetch manager's photo if a manager is assigned (optional; falls back to default avatar)
+    let managerPhoto = null;
+    if (userData.manager?.id) {
+      const managerPhotoBuf = await getUserPhotoById(accessToken, userData.manager.id);
+      if (managerPhotoBuf) {
+        managerPhoto = `data:image/jpeg;base64,${managerPhotoBuf.toString('base64')}`;
+      }
+    }
+
     // Render profile page with user data
     res.render('profile', {
       title: 'Perfil',
@@ -83,6 +93,7 @@ router.get('/', isAuthenticated, async (req, res, next) => {
       photo: photoBase64,
       groups: userData.groups,
       manager: userData.manager,
+      managerPhoto,
     });
   } catch (error) {
     console.error('Error fetching user data:', error);
@@ -323,22 +334,24 @@ router.post('/groups/generate-report', isAuthenticated, async (req, res, next) =
 
 /**
  * GET /api/users
- * Get all users in the organization for manager selection dropdown
+ * Active, licensed users in the organization for the manager selection dropdown
+ * (excludes rooms, shared mailboxes, unlicensed accounts, disabled accounts and guests)
  */
 router.get('/api/users', isAuthenticated, async (req, res, next) => {
   try {
     const accessToken = req.session.accessToken;
-    const users = await getAllUsers(accessToken);
-    
-    res.json({ 
-      success: true, 
-      users 
+    const myId = req.session.account?.localAccountId;
+    const users = (await getLicensedUsers(accessToken)).filter(user => !myId || user.id !== myId);
+
+    res.json({
+      success: true,
+      users,
     });
   } catch (error) {
     console.error('Error fetching users:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to fetch users' 
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch users',
     });
   }
 });

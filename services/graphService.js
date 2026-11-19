@@ -131,6 +131,35 @@ const DIRECTORY_USER_FIELDS = 'id,displayName,givenName,surname,mail,jobTitle,de
  * @param {string} userId - Directory id, already checked for its format
  * @returns {Promise<Object|null>} The user, or null when there is none
  */
+/**
+ * Get active, licensed member accounts (excludes rooms, shared mailboxes,
+ * unlicensed aliases, disabled accounts and external guests).
+ * @param {string} accessToken - Valid access token for Microsoft Graph
+ * @returns {Promise<Array>} Array of licensed users sorted by displayName
+ */
+async function getLicensedUsers(accessToken) {
+  try {
+    const users = await getAllPages(`${GRAPH_API_BASE}/users`, accessToken, {
+      params: {
+        $select: 'id,displayName,mail,userPrincipalName,jobTitle,department,assignedLicenses,accountEnabled,userType',
+        $orderby: 'displayName',
+        $top: 999,
+      },
+    });
+    return users
+      .filter(user =>
+        user.accountEnabled !== false
+        && user.userType !== 'Guest'
+        && Array.isArray(user.assignedLicenses)
+        && user.assignedLicenses.length > 0
+      )
+      .map(({ assignedLicenses, accountEnabled, userType, ...user }) => user);
+  } catch (error) {
+    console.error('Error fetching licensed users:', error.response?.data || error.message);
+    return [];
+  }
+}
+
 async function getUserById(accessToken, userId) {
   try {
     const response = await graphRequest('get', `${GRAPH_API_BASE}/users/${encodeURIComponent(userId)}`, accessToken, {
@@ -319,6 +348,28 @@ async function getUserPhoto(accessToken) {
  * @param {string} accessToken - Valid access token
  * @returns {Promise<boolean>}
  */
+/**
+ * Get another user's profile photo by directory ID
+ * @param {string} accessToken - Valid access token for Microsoft Graph
+ * @param {string} userId - Directory ID or UPN of the target user
+ * @returns {Promise<Buffer|null>} Photo data as buffer, or null if no photo exists or unreadable
+ */
+async function getUserPhotoById(accessToken, userId) {
+  if (!userId) return null;
+  try {
+    const response = await graphRequest('get', `${GRAPH_API_BASE}/users/${encodeURIComponent(userId)}/photo/$value`, accessToken, {
+      responseType: 'arraybuffer',
+    });
+    return Buffer.from(response.data, 'binary');
+  } catch (error) {
+    if (error.response?.status === 404) {
+      return null;
+    }
+    console.error(`Error fetching user photo for ${userId}:`, error.response?.data || error.message);
+    return null;
+  }
+}
+
 async function hasUserPhoto(accessToken) {
   try {
     await graphRequest('get', `${GRAPH_API_BASE}/me/photo`, accessToken, {
@@ -1356,6 +1407,7 @@ module.exports = {
   resetGraphCaches,
   getUserProfile,
   getUserPhoto,
+  getUserPhotoById,
   hasUserPhoto,
   getUserGroups,
   getUserManager,
@@ -1379,6 +1431,7 @@ module.exports = {
   getAuthenticationMethods,
   getUserDevices,
   getAllUsers,
+  getLicensedUsers,
   getUserById,
   getDirectReports,
   getSubscribedSkus,

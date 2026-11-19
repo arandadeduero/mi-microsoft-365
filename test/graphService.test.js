@@ -49,6 +49,22 @@ test.serial('getUserPhoto returns null when there is no photo or Graph fails', a
   t.is(await graph.getUserPhoto('token'), null);
 });
 
+test.serial('getUserPhotoById fetches another user photo and returns null when missing or unreadable', async t => {
+  t.is(await graph.getUserPhotoById('token', ''), null);
+  t.is(http.calls.length, 0);
+
+  http.on('get', '/users/u1/photo/$value', Buffer.from('png-bytes'));
+  const photo = await graph.getUserPhotoById('token', 'u1');
+  t.true(Buffer.isBuffer(photo));
+  t.is(photo.toString(), 'png-bytes');
+  t.is(http.calls[0].config.responseType, 'arraybuffer');
+
+  t.is(await graph.getUserPhotoById('token', 'missing'), null);
+
+  http.fail('get', '/users/u2/photo/$value', 500);
+  t.is(await graph.getUserPhotoById('token', 'u2'), null);
+});
+
 test.serial('getUserManager returns null when no manager is assigned', async t => {
   t.is(await graph.getUserManager('token'), null);
 
@@ -71,6 +87,21 @@ test.serial('getAllUsers requests a sorted page of users and returns [] on failu
 
   http.fail('get', '/v1.0/users', 500);
   t.deepEqual(await graph.getAllUsers('token'), []);
+});
+
+test.serial('getLicensedUsers keeps only active licensed members and strips license metadata', async t => {
+  http.on('get', '/v1.0/users', {
+    value: [
+      { id: 'u1', displayName: 'Ana', accountEnabled: true, userType: 'Member', assignedLicenses: [{ skuId: 'sku-1' }] },
+      { id: 'u2', displayName: 'Sala', accountEnabled: false, userType: 'Member', assignedLicenses: [] },
+      { id: 'u3', displayName: 'Buzón', accountEnabled: true, userType: 'Member', assignedLicenses: [] },
+      { id: 'u4', displayName: 'Deshabilitado', accountEnabled: false, userType: 'Member', assignedLicenses: [{ skuId: 'sku-1' }] },
+      { id: 'u5', displayName: 'Invitado', accountEnabled: true, userType: 'Guest', assignedLicenses: [{ skuId: 'sku-1' }] },
+    ],
+  });
+
+  t.deepEqual(await graph.getLicensedUsers('token'), [{ id: 'u1', displayName: 'Ana' }]);
+  t.true(http.calls[0].config.params.$select.includes('assignedLicenses'));
 });
 
 test.serial('getAllUsers follows @odata.nextLink until the last page', async t => {
