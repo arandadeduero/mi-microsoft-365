@@ -484,6 +484,12 @@
           <span class="badge bg-success">Crear: <%= toCreate %></span>
           <span class="badge bg-warning text-dark">Actualizar: <%= toUpdate %></span>
           <span class="badge bg-secondary">Sin cambios: <%= unchanged %></span>
+          <% if (typeof summary.managerChanges === 'number' && !summary.managerUnknown) { %>
+            <span class="badge bg-info text-dark">Responsables que cambian: <%= summary.managerChanges %></span>
+          <% } %>
+          <% if (summary.managerNotFound > 0) { %>
+            <span class="badge bg-danger">Responsables que no se encuentran: <%= summary.managerNotFound %></span>
+          <% } %>
           <span class="badge bg-<%= errCount > 0 ? 'danger' : 'secondary' %>">Errores: <%= errCount %></span>
           <span class="badge bg-light text-dark border">Bajas omitidas: <%= skippedLeaving %></span>
         </div>
@@ -531,8 +537,11 @@
                     const act = (item.action || '').toLowerCase();
                     const isCreate = act === 'create';
                     const isUpdate = act === 'update';
-                    const badgeClass = isCreate ? 'bg-success' : (isUpdate ? 'bg-warning text-dark' : 'bg-secondary');
-                    const badgeLabel = isCreate ? 'CREAR' : (isUpdate ? 'ACTUALIZAR' : 'SIN CAMBIOS');
+                    const mgr = item.managerChange || null;
+                    // Only the manager changes: still an update for whoever reads the list
+                    const managerOnly = !isCreate && !isUpdate && mgr && mgr.status === 'change';
+                    const badgeClass = isCreate ? 'bg-success' : (isUpdate || managerOnly ? 'bg-warning text-dark' : 'bg-secondary');
+                    const badgeLabel = isCreate ? 'CREAR' : (isUpdate || managerOnly ? 'ACTUALIZAR' : 'SIN CAMBIOS');
                     const diffs = Array.isArray(item.diffs) ? item.diffs : [];
                   %>
                   <tr>
@@ -540,11 +549,16 @@
                     <td><%= item.displayName || (item.desired && item.desired.displayName) || item.name || '—' %></td>
                     <td class="small text-muted"><%= item.upn || item.userPrincipalName || (item.desired && item.desired.userPrincipalName) || item.email || '—' %></td>
                     <td class="small">
-                      <% if (diffs.length > 0) { %>
+                      <% if (diffs.length > 0 || mgr) { %>
                         <ul class="mb-0 ps-3">
                           <% diffs.forEach(function(d) { %>
                             <li><code><%= d.field %></code>: <%= (d.from !== undefined && d.from !== null && d.from !== '') ? d.from : '—' %> &rarr; <strong><%= (d.to !== undefined && d.to !== null && d.to !== '') ? d.to : '—' %></strong></li>
                           <% }); %>
+                          <% if (mgr && mgr.status === 'change') { %>
+                            <li><code>responsable</code>: <%= mgr.from || '—' %> &rarr; <strong><%= mgr.to %></strong><%= mgr.newAccount ? ' (cuenta nueva)' : '' %></li>
+                          <% } else if (mgr && mgr.status === 'notfound') { %>
+                            <li class="text-danger"><code>responsable</code>: no se encuentra «<%= mgr.ref %>», se dejará como está</li>
+                          <% } %>
                         </ul>
                       <% } else if (isCreate) { %>
                         <span class="text-muted">Nueva cuenta en Microsoft 365</span>

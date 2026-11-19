@@ -449,7 +449,56 @@ function buildImportPlan(validRows, existingUsers, { limit = null } = {}) {
   return { items, summary };
 }
 
+/**
+ * Say, for every row of a plan that names a manager, whether that manager would
+ * change, so the preview shows it (the apply step still decides on its own).
+ * The manager is found like the apply step does: a number is an employee ID,
+ * anything else is an address; people who are about to be created count too.
+ * Sets `item.managerChange` and replaces `summary.managerChanges` (until now the
+ * number of rows that named a manager) by the number that really change.
+ * @param {{items: Array, summary: Object}} plan - From buildImportPlan
+ * @param {Array} existingUsers - Everyone in the directory
+ * @param {Map<string, {id: string, displayName: string}|null>} currentManagers - By user ID
+ * @param {string} domain
+ */
+function previewManagerChanges(plan, existingUsers, currentManagers, domain = DEFAULT_DOMAIN) {
+  const byEmployeeId = new Map();
+  const byUpn = new Map();
+  for (const user of existingUsers) {
+    if (user.employeeId) byEmployeeId.set(String(user.employeeId).trim(), { id: user.id, displayName: user.displayName });
+    if (user.userPrincipalName) byUpn.set(user.userPrincipalName.toLowerCase(), { id: user.id, displayName: user.displayName });
+  }
+  // Accounts this import creates can be managers of others in the same file
+  for (const item of plan.items) {
+    if (item.action !== 'create') continue;
+    const target = { id: null, displayName: item.displayName, newAccount: true };
+    if (item.payload?.employeeId) byEmployeeId.set(String(item.payload.employeeId).trim(), target);
+    byUpn.set(item.upn.toLowerCase(), target);
+  }
+
+  let changes = 0;
+  let notFound = 0;
+  for (const item of plan.items) {
+    if (!item.managerRef) continue;
+    const target = /^\d+$/.test(item.managerRef)
+      ? byEmployeeId.get(item.managerRef)
+      : byUpn.get(normalizeUpn(item.managerRef, domain).toLowerCase());
+    if (!target) {
+      item.managerChange = { status: 'notfound', ref: item.managerRef };
+      notFound += 1;
+      continue;
+    }
+    const current = item.existingId ? currentManagers.get(item.existingId) : null;
+    if (target.id && (target.id === item.existingId || target.id === current?.id)) continue; // nothing to change
+    item.managerChange = { status: 'change', from: current?.displayName || null, to: target.displayName, newAccount: Boolean(target.newAccount) };
+    changes += 1;
+  }
+  plan.summary.managerChanges = changes;
+  plan.summary.managerNotFound = notFound;
+}
+
 module.exports = {
+  previewManagerChanges,
   cellToString,
   readExcelBuffer,
   isEffectiveLeaving,

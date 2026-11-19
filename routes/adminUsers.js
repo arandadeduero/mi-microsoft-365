@@ -58,6 +58,7 @@ const {
   analyzeSyncCheck,
   parseImportRows,
   buildImportPlan,
+  previewManagerChanges,
 } = require('../services/adminUsersExcel');
 const {
   AUTO_GROUPS,
@@ -513,6 +514,14 @@ router.post('/admin/usuarios/excel/importar/preview', isAuthenticated, requireAd
     // Load BOTH active and disabled users so disabled accounts are matched properly
     const { users: existingUsers } = await listAdminUsers(token, { onlyDisabled: null });
     const plan = buildImportPlan(parsed.validRows, existingUsers, { domain: currentDomain(), limit });
+    // Who their manager is today, to show which managers would change (not only the fields)
+    try {
+      const withManager = plan.items.filter(item => item.managerRef && item.existingId).map(item => item.existingId);
+      previewManagerChanges(plan, existingUsers, await fetchManagersBatch(token, withManager), currentDomain());
+    } catch (err) {
+      if (err.graphStatus === 401) throw err;
+      plan.summary.managerUnknown = true; // the apply step still sets managers
+    }
     const ownerId = req.session.account?.localAccountId || req.session.account?.username || 'admin';
     const planId = storeImportPlan(ownerId, plan);
 

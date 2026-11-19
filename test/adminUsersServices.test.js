@@ -4,7 +4,7 @@ const ExcelJS = require('exceljs');
 const test = require('ava').default;
 const {
   cellToString, readExcelBuffer, isEffectiveLeaving, validateExcelRows,
-  analyzeSyncCheck, parseImportRows, buildImportPlan,
+  analyzeSyncCheck, parseImportRows, buildImportPlan, previewManagerChanges,
 } = require('../services/adminUsersExcel');
 const {
   isRoomUser, generateTempPassword, buildResetCredentialLinks, filterAdminUsers, buildMailingList,
@@ -100,6 +100,36 @@ test('import parses Spanish headers and plans create, update and ready without r
   t.false('accountEnabled' in plan.items[0].updatePayload);
   t.false('mailNickname' in plan.items[0].updatePayload);
   t.deepEqual(plan.summary, { total: 3, create: 1, update: 1, ready: 1, managerChanges: 1 });
+});
+
+test('the import plan says which managers really change', t => {
+  const { validRows } = parseImportRows([
+    { id_empleado: '2', Trabajador: 'PEREZ, ANA', e_mail: 'ana@arandadeduero.es', 'ID responsable': '1' },
+    { id_empleado: '3', Trabajador: 'GOMEZ, LUIS', e_mail: 'luis@arandadeduero.es', 'ID responsable': 'BOSS@arandadeduero.es' },
+    { id_empleado: '4', Trabajador: 'NUEVA, LUCIA', e_mail: 'lucia@arandadeduero.es', 'ID responsable': '2' },
+    { id_empleado: '5', Trabajador: 'NUEVO, PEDRO', e_mail: 'pedro@arandadeduero.es', 'ID responsable': '99' },
+    { id_empleado: '6', Trabajador: 'NUEVA, EVA', e_mail: 'eva@arandadeduero.es', 'ID responsable': 'lucia@arandadeduero.es' },
+    { id_empleado: '7', Trabajador: 'SIN, RESPONSABLE', e_mail: 'sr@arandadeduero.es' },
+  ], 'arandadeduero.es', { today: TODAY });
+  const existing = [
+    { id: 'b', userPrincipalName: 'boss@arandadeduero.es', displayName: 'Boss Jefe', employeeId: '1' },
+    { id: 'a', userPrincipalName: 'ana@arandadeduero.es', displayName: 'Ana Pérez', employeeId: '2' },
+    { id: 'l', userPrincipalName: 'luis@arandadeduero.es', displayName: 'Luis Gómez', employeeId: '3' },
+  ];
+  const plan = buildImportPlan(validRows, existing);
+  previewManagerChanges(plan, existing, new Map([['a', { id: 'b', displayName: 'Boss Jefe' }], ['l', { id: 'x', displayName: 'Otro Jefe' }]]), 'arandadeduero.es');
+
+  const change = (upn) => plan.items.find(item => item.upn === upn).managerChange;
+  t.is(change('ana@arandadeduero.es'), undefined); // already has that manager
+  t.deepEqual(change('luis@arandadeduero.es'), { status: 'change', from: 'Otro Jefe', to: 'Boss Jefe', newAccount: false });
+  t.deepEqual(change('lucia@arandadeduero.es'), { status: 'change', from: null, to: 'Ana Pérez', newAccount: false });
+  t.deepEqual(change('pedro@arandadeduero.es'), { status: 'notfound', ref: '99' });
+  // A manager who is created by the same file is found too
+  t.deepEqual(change('eva@arandadeduero.es'), { status: 'change', from: null, to: 'Lucia Nueva', newAccount: true });
+  t.is(change('sr@arandadeduero.es'), undefined);
+  // The count is of real changes, no longer of rows that name a manager
+  t.is(plan.summary.managerChanges, 3);
+  t.is(plan.summary.managerNotFound, 1);
 });
 
 test('passwords and credential links', t => {
