@@ -306,7 +306,7 @@ router.get('/account/groups', isAuthenticated, async (req, res, next) => {
 
     res.render('my-groups', {
       title: 'Mis grupos',
-      currentPage: 'account',
+      currentPage: 'groups',
       groups: groups
         .map(group => ({ ...group, about: describeGroup(group) }))
         .sort((a, b) => (a.displayName || '').localeCompare(b.displayName || '')),
