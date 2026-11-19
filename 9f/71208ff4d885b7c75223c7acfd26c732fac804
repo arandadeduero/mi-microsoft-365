@@ -1,0 +1,30 @@
+services/adminUsersExcel.js
+  s_fce2362ad8a293::t_02fd11d5c7e856 452-499,501
+routes/adminUsers.js
+  s_fce2362ad8a293::t_02fd11d5c7e856 61,517-524
+test/adminUsers.test.js
+  s_fce2362ad8a293::t_e1681b5a293570 352-382
+views/admin-users-excel.ejs
+  s_fce2362ad8a293::t_02fd11d5c7e856 487-492,540-544,552,557-561
+test/adminUsersServices.test.js
+  s_fce2362ad8a293::t_e1681b5a293570 7,105-132
+  s_fce2362ad8a293::t_6c87197c7aeb33 133-134
+AGENTS.md
+  s_fce2362ad8a293::t_995ec0536c1e17 44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9f71208ff4d885b7c75223c7acfd26c732fac804",
+  "prompts": {},
+  "sessions": {
+    "s_fce2362ad8a293": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "abbfdd8e-3213-4c40-8035-e7366626bc8b",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Guillermo López <willyaranda@gmail.com>"
+    }
+  }
+}
