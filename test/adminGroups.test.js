@@ -12,12 +12,14 @@ const test = require('ava').default;
 const request = require('supertest');
 const { stubAxios, stubMsal, signInAgent, getCsrfToken, auditEvents, httpError } = require('./helpers/stubs');
 const { resetGraphCaches } = require('../services/graphService');
-const { describeAdminGroup, diffGroupEdit, toMailAlias, validateNewGroup, parseAddressList, reviewGroups, MAX_BULK } = require('../services/adminGroups');
+const { describeAdminGroup, diffGroupEdit, toMailAlias, validateNewGroup, parseAddressList, reviewGroups, outlookGroupLinks, summarizeMembers, groupHistory, MAX_BULK } = require('../services/adminGroups');
 
 const http = stubAxios();
 const msal = stubMsal();
 
 const permissions = require('../config/permissions');
+const { audit } = require('../services/auditService');
+const requestStore = require('../services/requestStore');
 const app = require('../server');
 
 const ROLES = '/me/memberOf/microsoft.graph.directoryRole';
@@ -432,4 +434,94 @@ test.serial('the attention page lists groups with no owner, one owner or nobody 
   t.notRegex(res.text, /Todos los de Obras|Lista prensa/);
   t.regex(res.text, /los <strong>4<\/strong> grupos que se pueden gestionar/);
   t.regex((await agent.get('/admin/grupos').expect(200)).text, /href="\/admin\/grupos\/atencion"/);
+});
+
+test('the Outlook links, the member summary and the history of a group are built from what is known', t => {
+  const links = outlookGroupLinks({ isUnified: true, mail: 'informatica@arandadeduero.es' });
+  t.is(links.mail, 'https://outlook.office.com/mail/group/arandadeduero.es/informatica/email');
+  t.is(links.calendar, 'https://outlook.office.com/calendar/group/arandadeduero.es/informatica/view/month');
+  t.is(outlookGroupLinks({ isUnified: true, mail: 'a b@x.es' }).mail, 'https://outlook.office.com/mail/group/x.es/a%20b/email');
+  // Only Microsoft 365 groups with an address have a mailbox of their own
+  t.is(outlookGroupLinks({ isUnified: false, mail: 'prensa@arandadeduero.es' }), null);
+  t.is(outlookGroupLinks({ isUnified: true, mail: '' }), null);
+
+  t.deepEqual(summarizeMembers([{ userType: 'Member' }, { userType: 'Guest' }, { userType: 'Guest' }], [{}]), { people: 3, guests: 2, groups: 1 });
+  t.is(summarizeMembers([], null).groups, null); // not read is not "none"
+
+  const rows = groupHistory([
+    { time: 't3', event: 'admin.group_updated', groupId: 'g1', actor: 'a@x.es' },
+    { time: 't2', event: 'admin.group_updated', groupId: 'g2', actor: 'b@x.es' },
+    { time: 't1', event: 'evento.raro', groupId: 'g1' },
+  ], 'g1', { 'admin.group_updated': 'Datos modificados' });
+  t.deepEqual(rows, [{ time: 't3', label: 'Datos modificados', actor: 'a@x.es' }, { time: 't1', label: 'evento.raro', actor: null }]);
+});
+
+test.serial('the group page shows its Teams team, guests, groups inside, requests, portal history and Outlook links', async t => {
+  const { agent } = await signInAs(t, ADMIN, { admin: true });
+  const GID_TEAM = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
+  stubGroupPages();
+  http.on('get', `/v1.0/groups/${GID_TEAM}`, { id: GID_TEAM, displayName: 'Informática', mail: 'informatica@arandadeduero.es', mailEnabled: true, securityEnabled: false, groupTypes: ['Unified'], visibility: 'Private', resourceProvisioningOptions: ['Team'] });
+  http.on('get', `/v1.0/groups/${GID_TEAM}/owners`, { value: [{ id: UID_ADMIN, displayName: 'Ada Admin' }] });
+  http.on('get', `/v1.0/groups/${GID_TEAM}/members/microsoft.graph.user`, { value: [
+    { id: UID_ANA, displayName: 'Ana Pérez', mail: 'ana@arandadeduero.es', userType: 'Member' },
+    { id: UID_CARL, displayName: 'Carl Externo', mail: 'carl@gmail.com', userType: 'Guest' },
+  ] });
+  http.on('get', `/v1.0/groups/${GID_TEAM}/members/microsoft.graph.group`, { value: [{ id: GID_INFO, displayName: 'Subgrupo de Obras', mail: 'obras@arandadeduero.es' }] });
+  http.on('get', `/v1.0/teams/${GID_TEAM}`, { displayName: 'Informática', isArchived: false, webUrl: 'https://teams.example/l/team/informatica' });
+  http.on('get', `/v1.0/teams/${GID_TEAM}/channels`, { value: [{ displayName: 'General', membershipType: 'standard' }, { displayName: 'Dirección', membershipType: 'private' }] });
+  await audit('admin.group_updated', { actor: 'otra@arandadeduero.es', groupId: GID_TEAM, fields: ['displayName'] });
+  await audit('admin.group_updated', { actor: 'otra@arandadeduero.es', groupId: GID_INFO, fields: ['displayName'] });
+  requestStore.createRequest({ groupId: GID_TEAM, groupName: 'Informática', requester: { id: UID_ANA, name: 'Luis Solicitante', email: 'luis@arandadeduero.es' } });
+
+  const res = await agent.get(`/admin/grupos/${GID_TEAM}`).expect(200);
+
+  // Teams: the team, its channels (a private one marked) and the way in
+  t.regex(res.text, /Canales \(2\)/);
+  t.regex(res.text, /General/);
+  t.regex(res.text, /Dirección <span class="badge bg-secondary">privado<\/span>/);
+  t.regex(res.text, /href="https:\/\/teams\.example\/l\/team\/informatica"[^>]*>Abrir en Teams/);
+  // Members: people, guests and groups inside
+  t.regex(res.text, /2 personas \(1 invitada de fuera\) · y 1 grupo dentro/);
+  t.regex(res.text, new RegExp(`href="/admin/grupos/${GID_INFO}">Subgrupo de Obras`));
+  // Requests and the portal history of this group only
+  t.regex(res.text, /Solicitudes para entrar \(1\)/);
+  t.regex(res.text, /Luis Solicitante/);
+  t.regex(res.text, /Datos de un grupo modificados desde Administración/);
+  t.is((res.text.match(/Datos de un grupo modificados desde Administración/g) || []).length, 1);
+  // Outlook
+  t.regex(res.text, /href="https:\/\/outlook\.office\.com\/mail\/group\/arandadeduero\.es\/informatica\/email"/);
+  t.regex(res.text, /view\/month"[^>]*>Calendario del grupo/);
+});
+
+test.serial('what cannot be read is said, and a group without a team says so', async t => {
+  const { agent } = await signInAs(t, ADMIN, { admin: true });
+  const GID_TEAM = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
+  stubGroupPages();
+  const team = { id: GID_TEAM, displayName: 'Informática', mail: 'informatica@arandadeduero.es', mailEnabled: true, securityEnabled: false, groupTypes: ['Unified'], resourceProvisioningOptions: ['Team'] };
+  http.on('get', `/v1.0/groups/${GID_TEAM}`, team);
+  http.on('get', `/v1.0/groups/${GID_TEAM}/owners`, { value: [] });
+  http.on('get', `/v1.0/groups/${GID_TEAM}/members/microsoft.graph.user`, { value: [] });
+  http.on('get', `/v1.0/teams/${GID_TEAM}`, () => { throw httpError(403); });
+
+  const noTeamData = await agent.get(`/admin/grupos/${GID_TEAM}`).expect(200);
+  t.regex(noTeamData.text, /pero ahora mismo no se han podido leer sus datos/);
+  t.notRegex(noTeamData.text, /no tiene equipo de Teams/);
+  // The groups inside could not be read either (nothing is stubbed for them): not "none"
+  t.regex(noTeamData.text, /no se han podido leer los grupos anidados/);
+
+  http.on('get', `/v1.0/teams/${GID_TEAM}`, { displayName: 'Informática', isArchived: true, webUrl: null });
+  http.on('get', `/v1.0/teams/${GID_TEAM}/channels`, () => { throw httpError(403); });
+  const noChannels = await agent.get(`/admin/grupos/${GID_TEAM}`).expect(200);
+  t.regex(noChannels.text, /Archivado/);
+  t.regex(noChannels.text, /No se han podido leer los canales/);
+  t.notRegex(noChannels.text, /Abrir en Teams/);
+
+  // A Microsoft 365 group with no team, and a security group (no Teams, no Outlook)
+  const unified = await agent.get(`/admin/grupos/${GID_INFO}`).expect(200);
+  t.regex(unified.text, /no tiene equipo de Teams/);
+  t.regex(unified.text, /Buzón del grupo en Outlook/);
+  http.on('get', `/v1.0/groups/${GID_DYN}`, { id: GID_DYN, displayName: 'Seguridad', mailEnabled: false, securityEnabled: true, groupTypes: [] });
+  const security = await agent.get(`/admin/grupos/${GID_DYN}`).expect(200);
+  t.notRegex(security.text, />Teams</);
+  t.notRegex(security.text, /Buzón del grupo en Outlook/);
 });

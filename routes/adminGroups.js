@@ -16,8 +16,11 @@ const permissions = require('../config/permissions');
 const { isAuthenticated } = require('../middleware/auth');
 const { userError } = require('../middleware/errorHandler');
 const { auditRequest } = require('../services/auditService');
-const { compareEs, DIRECTORY_ID } = require('../services/formatters');
+const { compareEs, DIRECTORY_ID, formatDateTime } = require('../services/formatters');
 const { mapWithConcurrency } = require('../services/asyncUtils');
+const { readAudit } = require('../services/auditService');
+const { listPendingForGroups } = require('../services/requestStore');
+const auditLabels = require('../config/auditEvents');
 const {
   listAdminGroups,
   getGroupsChecks,
@@ -26,6 +29,8 @@ const {
   updateGroup,
   getGroupOwners,
   getGroupMembers,
+  getGroupTeam,
+  getGroupNestedGroups,
   addGroupOwner,
   removeGroupOwner,
   addUserToGroup,
@@ -40,6 +45,9 @@ const {
   describeAdminGroup,
   filterAdminGroups,
   reviewGroups,
+  outlookGroupLinks,
+  summarizeMembers,
+  groupHistory,
   validateNewGroup,
   validateGroupEdit,
   diffGroupEdit,
@@ -183,9 +191,12 @@ router.get('/admin/grupos/:id', isAuthenticated, requireAdmin, async (req, res, 
     const group = await loadGroup(req, next);
     if (!group) return undefined;
     const token = req.session.accessToken;
-    const [owners, members] = await Promise.all([
+    const [owners, members, nested, team, entries] = await Promise.all([
       getGroupOwners(token, group.id),
       getGroupMembers(token, group.id),
+      getGroupNestedGroups(token, group.id),
+      group.hasTeam ? getGroupTeam(token, group.id) : null,
+      readAudit({ days: 30 }),
     ]);
     return res.render('admin-group-detail', {
       title: group.displayName,
@@ -193,6 +204,12 @@ router.get('/admin/grupos/:id', isAuthenticated, requireAdmin, async (req, res, 
       group,
       owners: [...owners].sort((a, b) => compareEs(a.displayName, b.displayName)),
       members: [...members].sort((a, b) => compareEs(a.displayName, b.displayName)),
+      summary: summarizeMembers(members, nested),
+      nested: nested ? [...nested].sort((a, b) => compareEs(a.displayName, b.displayName)) : null,
+      team,
+      links: outlookGroupLinks(group),
+      pending: listPendingForGroups([group.id]),
+      history: groupHistory(entries, group.id, auditLabels).map(row => ({ ...row, when: formatDateTime(row.time) })),
       visibilities: VISIBILITIES,
       flash: popSessionValue(req, 'adminGroupsFlash'),
       errorMsg: popSessionValue(req, 'adminGroupsError'),
