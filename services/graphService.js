@@ -1668,7 +1668,7 @@ async function getAdminUser(accessToken, idOrUpn) {
     return response.data;
   } catch (error) {
     if (error.response?.status === 404) return null;
-    console.error(`Error fetching admin user ${idOrUpn}:`, error.response?.data || error.message);
+    console.error('Error fetching admin user %s:', encodeURIComponent(idOrUpn), error.response?.data || error.message);
     throw graphError('Failed to fetch admin user', error);
   }
 }
@@ -1843,7 +1843,7 @@ async function addUserToGroup(accessToken, groupId, userId) {
     if (status === 409 || (status === 400 && message.includes('already exist'))) {
       return;
     }
-    console.error(`Error adding user ${userId} to group ${groupId}:`, error.response?.data || error.message);
+    console.error('Error adding user %s to group %s:', encodeURIComponent(userId), encodeURIComponent(groupId), error.response?.data || error.message);
     throw graphError('Failed to add user to group', error);
   }
 }

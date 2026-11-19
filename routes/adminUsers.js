@@ -142,8 +142,6 @@ function requireAdmin(req, res, next) {
 const asArray = (val) => (Array.isArray(val) ? val : (val ? [val] : []));
 const isValidId = (id) => typeof id === 'string' && DIRECTORY_ID.test(id);
 const currentDomain = () => permissions.DOMAIN || 'arandadeduero.es';
-const pause = (ms) => (process.env.NODE_ENV === 'test' ? Promise.resolve() : new Promise(resolve => setTimeout(resolve, ms)));
-
 function friendlyGraphError(err, fallback = 'No se ha podido completar la operación en Microsoft 365.') {
   const detail = err?.graphMessage || err?.response?.data?.error?.message || err?.message;
   if (err?.graphStatus === 403 || err?.response?.status === 403) {
