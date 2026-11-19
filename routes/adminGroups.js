@@ -81,7 +81,7 @@ router.get('/admin/grupos', isAuthenticated, requireAdmin, async (req, res, next
     const groups = filterAdminGroups(all, { q, kind });
     res.render('admin-groups', {
       title: 'Grupos',
-      currentPage: 'audit',
+      currentPage: 'admin',
       groups,
       total: all.length,
       q,
@@ -98,7 +98,7 @@ router.get('/admin/grupos', isAuthenticated, requireAdmin, async (req, res, next
 router.get('/admin/grupos/nuevo', isAuthenticated, requireAdmin, (req, res) => {
   res.render('admin-group-new', {
     title: 'Nuevo grupo',
-    currentPage: 'audit',
+    currentPage: 'admin',
     domain: permissions.DOMAIN || '',
     form: popSessionValue(req, 'adminGroupForm') || {},
     errorMsg: popSessionValue(req, 'adminGroupsError'),
@@ -153,7 +153,7 @@ router.get('/admin/grupos/:id', isAuthenticated, requireAdmin, async (req, res, 
     ]);
     return res.render('admin-group-detail', {
       title: group.displayName,
-      currentPage: 'audit',
+      currentPage: 'admin',
       group,
       owners: [...owners].sort((a, b) => compareEs(a.displayName, b.displayName)),
       members: [...members].sort((a, b) => compareEs(a.displayName, b.displayName)),

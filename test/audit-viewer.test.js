@@ -54,6 +54,12 @@ test.serial('only administrators get the administration menu', async t => {
   const adminMenu = (await admin.get('/ayuda').expect(200)).text.split('<nav ')[1].split('</nav>')[0];
   t.true(adminMenu.includes('>Administración</a>'));
   t.true(adminMenu.includes('href="/admin/audit"'));
+  // The menu is split in sections, and Grupos sits with the people
+  for (const title of ['Personas y cuentas', 'Día a día', 'Supervisión', 'Portal']) {
+    t.true(adminMenu.includes(`<h6 class="dropdown-header">${title}</h6>`), title);
+  }
+  t.true(adminMenu.indexOf('Personas y cuentas') < adminMenu.indexOf('href="/admin/grupos"'));
+  t.true(adminMenu.indexOf('href="/admin/grupos"') < adminMenu.indexOf('Día a día'));
 
   const user = await signInAs(t, USER, { admin: false });
   const userMenu = (await user.get('/ayuda').expect(200)).text.split('<nav ')[1].split('</nav>')[0];

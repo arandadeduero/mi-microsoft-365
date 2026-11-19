@@ -115,7 +115,9 @@ test.serial('the menu marks the group and the page the user is on', async t => {
   const res = await agent.get('/account/groups').expect(200);
 
   const menu = res.text.split('<nav ')[1].split('</nav>')[0];
-  t.true(menu.includes('href="/account" class="nav-link dropdown-toggle active"'));
+  // "Mis grupos" is in the Grupos menu, not in Mi cuenta
+  t.true(menu.includes('href="/groups" class="nav-link dropdown-toggle active"'));
+  t.false(menu.includes('href="/account" class="nav-link dropdown-toggle active"'));
   t.true(menu.includes('class="dropdown-item active" href="/account/groups"'));
   t.false(menu.includes('href="/" class="nav-link active"'));
 });

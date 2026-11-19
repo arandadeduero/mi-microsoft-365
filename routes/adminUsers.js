@@ -240,7 +240,7 @@ router.get('/admin/usuarios', isAuthenticated, requireAdmin, async (req, res, ne
 
     res.render('admin-users', {
       title: 'Usuarios',
-      currentPage: 'audit',
+      currentPage: 'admin',
       activeTab: 'directorio',
       users: filtered,
       totalUsers: totalCount,
@@ -263,7 +263,7 @@ router.get('/admin/usuarios', isAuthenticated, requireAdmin, async (req, res, ne
 function renderExcelPage(res, overrides = {}) {
   res.render('admin-users-excel', {
     title: 'Usuarios · Excel',
-    currentPage: 'audit',
+    currentPage: 'admin',
     activeTab: 'excel',
     excelSection: 'validar',
     excelUrl: appConfig.USERS_EXCEL_URL || '',
@@ -743,7 +743,7 @@ router.get('/admin/usuarios/responsables', isAuthenticated, requireAdmin, async 
     const ctx = await loadManagersPageContext(req.session.accessToken, req.query);
     res.render('admin-users-managers', {
       title: 'Usuarios · Responsables y grupos',
-      currentPage: 'audit',
+      currentPage: 'admin',
       activeTab: 'responsables',
       ...ctx,
       assignResult: null,
@@ -766,7 +766,7 @@ router.post('/admin/usuarios/responsables/asignar', isAuthenticated, requireAdmi
       const ctx = await loadManagersPageContext(token, req.body);
       return res.render('admin-users-managers', {
         title: 'Usuarios · Responsables y grupos',
-        currentPage: 'audit',
+        currentPage: 'admin',
         activeTab: 'responsables',
         ...ctx,
         assignResult: null,
@@ -802,7 +802,7 @@ router.post('/admin/usuarios/responsables/asignar', isAuthenticated, requireAdmi
     const ctx = await loadManagersPageContext(token, req.body);
     res.render('admin-users-managers', {
       title: 'Usuarios · Responsables y grupos',
-      currentPage: 'audit',
+      currentPage: 'admin',
       activeTab: 'responsables',
       ...ctx,
       assignResult: { updated, failed, skippedSelf },
@@ -825,7 +825,7 @@ router.post('/admin/usuarios/responsables/grupos', isAuthenticated, requireAdmin
       const ctx = await loadManagersPageContext(token, req.body);
       return res.render('admin-users-managers', {
         title: 'Usuarios · Responsables y grupos',
-        currentPage: 'audit',
+        currentPage: 'admin',
         activeTab: 'responsables',
         ...ctx,
         assignResult: null,
@@ -858,7 +858,7 @@ router.post('/admin/usuarios/responsables/grupos', isAuthenticated, requireAdmin
     const ctx = await loadManagersPageContext(token, req.body);
     res.render('admin-users-managers', {
       title: 'Usuarios · Responsables y grupos',
-      currentPage: 'audit',
+      currentPage: 'admin',
       activeTab: 'responsables',
       ...ctx,
       assignResult: null,
@@ -879,7 +879,7 @@ async function loadQualityPage(token, { section = 'puestos', rootUpn = '', runTz
   const effectiveRootUpn = normalizeUpn(rootUpn || appConfig.ORG_CHART_ROOT, currentDomain());
   const state = {
     title: 'Usuarios · Calidad de datos',
-    currentPage: 'audit',
+    currentPage: 'admin',
     activeTab: 'calidad',
     qualitySection: section,
     jobTitleCandidates: null,
@@ -1186,7 +1186,7 @@ router.get('/admin/usuarios/:id', isAuthenticated, requireAdmin, async (req, res
 
     res.render('admin-user-edit', {
       title: user.displayName || user.userPrincipalName,
-      currentPage: 'audit',
+      currentPage: 'admin',
       activeTab: 'directorio',
       user,
       userPhoto,

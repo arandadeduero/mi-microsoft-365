@@ -54,7 +54,7 @@ router.get('/admin/audit', isAuthenticated, requireAdmin, async (req, res, next)
 
     res.render('audit', {
       title: 'Auditoría',
-      currentPage: 'audit',
+      currentPage: 'admin',
       filters,
       events: [...new Set(all.map(entry => entry.event))].sort(),
       entries: matching.slice(0, MAX_ENTRIES),
@@ -121,7 +121,7 @@ async function renderAdminAccounts(req, res, next) {
       })
       : null;
 
-    res.render('admin-accounts', { title: 'Cuentas que necesitan atención', currentPage: 'audit', review, signInsError: listing ? listing.signInsError : null });
+    res.render('admin-accounts', { title: 'Cuentas que necesitan atención', currentPage: 'admin', review, signInsError: listing ? listing.signInsError : null });
   } catch (error) {
     next(error);
   }
@@ -136,7 +136,7 @@ router.get('/admin/usuarios/atencion', isAuthenticated, requireAdmin, renderAdmi
 router.get('/admin/licencias', isAuthenticated, requireAdmin, async (req, res, next) => {
   try {
     const skus = await getSubscribedSkus(req.session.accessToken);
-    res.render('admin-licenses', { title: 'Licencias', currentPage: 'audit', licenses: skus && describeLicenseStock(skus, SKU_NAMES) });
+    res.render('admin-licenses', { title: 'Licencias', currentPage: 'admin', licenses: skus && describeLicenseStock(skus, SKU_NAMES) });
   } catch (error) {
     next(error);
   }
@@ -178,7 +178,7 @@ router.get('/admin/licencias/:sku', isAuthenticated, requireAdmin, async (req, r
 
     res.render('admin-license-users', {
       title: `Licencia · ${license.name}`,
-      currentPage: 'audit',
+      currentPage: 'admin',
       license,
       users: holders,
     });
@@ -192,7 +192,7 @@ router.get('/admin/licencias/:sku', isAuthenticated, requireAdmin, async (req, r
  */
 router.get('/admin/avisos', isAuthenticated, requireAdmin, async (req, res, next) => {
   try {
-    res.render('admin-messages', { title: 'Avisos de Microsoft', currentPage: 'audit', messages: await getServiceMessages() });
+    res.render('admin-messages', { title: 'Avisos de Microsoft', currentPage: 'admin', messages: await getServiceMessages() });
   } catch (error) {
     next(error);
   }
@@ -205,7 +205,7 @@ router.get('/admin/solicitudes', isAuthenticated, requireAdmin, (req, res, next)
   try {
     const now = Date.now();
     const pending = listPending().map(request => ({ ...request, days: Math.floor((now - new Date(request.createdAt).getTime()) / 86400000) }));
-    res.render('admin-requests', { title: 'Solicitudes pendientes', currentPage: 'audit', pending });
+    res.render('admin-requests', { title: 'Solicitudes pendientes', currentPage: 'admin', pending });
   } catch (error) {
     next(error);
   }
@@ -276,7 +276,7 @@ router.get('/admin/salas', isAuthenticated, requireAdmin, async (req, res, next)
 
     res.render('admin-rooms', {
       title: 'Ocupación de salas',
-      currentPage: 'audit',
+      currentPage: 'admin',
       rooms,
       room,
       today,
@@ -343,7 +343,7 @@ router.get('/admin/comisiones', isAuthenticated, requireAdmin, async (req, res, 
     delete req.session.commissionCreated;
     res.render('admin-commissions', {
       title: 'Convocar una comisión',
-      currentPage: 'audit',
+      currentPage: 'admin',
       config: commissions,
       created,
       ...await commissionSetup(req.session.accessToken),
@@ -410,7 +410,7 @@ router.get('/admin/ajustes', isAuthenticated, requireAdmin, (req, res, next) => 
   try {
     const saved = req.session.settingsSaved || false;
     delete req.session.settingsSaved;
-    res.render('admin-settings', { title: 'Ajustes', currentPage: 'audit', settings: currentSettings(), domain: permissions.DOMAIN, saved });
+    res.render('admin-settings', { title: 'Ajustes', currentPage: 'admin', settings: currentSettings(), domain: permissions.DOMAIN, saved });
   } catch (error) {
     next(error);
   }
