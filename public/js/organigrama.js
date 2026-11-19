@@ -100,7 +100,7 @@
         // The card shows who was found; the library's own thick outline is not needed
         .nodeUpdate(function () {})
         .linkUpdate(function () {
-          d3.select(this).attr('stroke', '#9fb0c5').attr('stroke-width', 1.5);
+          d3.select(this).classed('org-link', true).attr('stroke', null).attr('stroke-width', null);
         })
         .buttonContent(({ node }) => `<div class="org-toggle">${node.children ? '−' : '+'} ${node.data._directSubordinates}</div>`)
         .nodeContent(card)
