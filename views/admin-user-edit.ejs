@@ -109,6 +109,10 @@
     const skuChoices = Array.isArray(typeof availableSkus !== 'undefined' ? availableSkus : null)
       ? availableSkus.filter(function(s) { return !assignedSkuIds.has(s.skuId); })
       : null;
+    // One list: what the person has (checked) and what could be given (unchecked), by name
+    const licenseRows = licenseList.map(function(l) { return { skuId: l.skuId, name: l.name || l.skuPartNumber || l.skuId, held: true }; })
+      .concat((skuChoices || []).map(function(sku) { return { skuId: sku.skuId, name: sku.name, held: false, left: sku.left }; }))
+      .sort(function(a, b) { return a.name.localeCompare(b.name, 'es'); });
   %>
   <div class="card shadow-sm border-0 app-panel mb-4">
     <div class="card-body p-4">
@@ -120,40 +124,24 @@
       <% } %>
       <form action="/admin/usuarios/<%= encodedId %>/licencias" method="POST" data-confirm="¿Aplicar los cambios de licencias a <%= u.displayName || u.userPrincipalName %>?">
         <input type="hidden" name="_csrf" value="<%= csrfToken() %>">
-        <h3 class="h6 text-uppercase text-muted border-bottom pb-2 mb-3">Asignadas</h3>
-        <% if (licenseList.length === 0) { %>
-          <p class="text-muted">Sin licencias.</p>
-        <% } else { %>
-          <p class="text-muted small">Marca las que quieras quitar.</p>
-          <% licenseList.forEach(function(lic) { %>
-            <div class="form-check mb-1">
-              <input class="form-check-input" type="checkbox" name="removeSkuIds" value="<%= lic.skuId %>" id="remove-<%= lic.skuId %>">
-              <label class="form-check-label" for="remove-<%= lic.skuId %>"><%= lic.name || lic.skuPartNumber || lic.skuId %></label>
-            </div>
-          <% }); %>
-          <div class="form-check mt-2">
-            <input class="form-check-input" type="checkbox" id="remove-all" data-check-all="input[name='removeSkuIds']">
-            <label class="form-check-label small" for="remove-all">Marcar todas</label>
-          </div>
-        <% } %>
-
-        <h3 class="h6 text-uppercase text-muted border-bottom pb-2 mt-4 mb-3">Añadir</h3>
         <% if (skuChoices === null) { %>
-          <p class="text-muted mb-0">No se puede consultar qué licencias hay disponibles.</p>
-        <% } else if (skuChoices.length === 0) { %>
-          <p class="text-muted">No hay más licencias disponibles que no tenga ya.</p>
+          <p class="text-muted small">No se puede consultar qué licencias hay disponibles: aquí solo se pueden quitar las que ya tiene.</p>
+        <% } else if (!u.usageLocation) { %>
+          <p class="small text-warning">Esta persona no tiene «ubicación de uso» (por ejemplo ES); Microsoft la exige para asignar licencias. Se pondrá ES al guardar si marcas alguna nueva.</p>
+        <% } %>
+        <% if (licenseRows.length === 0) { %>
+          <p class="text-muted">Sin licencias, y no hay ninguna disponible para asignar.</p>
         <% } else { %>
-          <% if (!u.usageLocation) { %>
-            <p class="small text-warning">Esta persona no tiene «ubicación de uso» (por ejemplo ES); Microsoft la exige para asignar licencias. Se pondrá ES al guardar si añades alguna.</p>
-          <% } %>
-          <% skuChoices.forEach(function(sku) { %>
+          <p class="text-muted small">Están marcadas las licencias que tiene. Marca las que quieras darle y desmarca las que quieras quitarle.</p>
+          <% licenseRows.forEach(function(row) { %>
             <div class="form-check mb-1">
-              <input class="form-check-input" type="checkbox" name="addSkuIds" value="<%= sku.skuId %>" id="add-<%= sku.skuId %>" <%= sku.left <= 0 ? 'disabled' : '' %>>
-              <label class="form-check-label" for="add-<%= sku.skuId %>"><%= sku.name %> <span class="text-muted small">(<%= sku.left %> libres)</span></label>
+              <input type="hidden" name="shownSkuIds" value="<%= row.skuId %>">
+              <input class="form-check-input" type="checkbox" name="skuIds" value="<%= row.skuId %>" id="sku-<%= row.skuId %>" <%= row.held ? 'checked' : '' %> <%= !row.held && row.left <= 0 ? 'disabled' : '' %>>
+              <label class="form-check-label" for="sku-<%= row.skuId %>"><%= row.name %><% if (!row.held) { %> <span class="text-muted small">(<%= row.left %> libres)</span><% } %></label>
             </div>
           <% }); %>
+          <button type="submit" class="btn btn-primary mt-3">Guardar licencias</button>
         <% } %>
-        <button type="submit" class="btn btn-primary mt-3">Guardar licencias</button>
       </form>
     </div>
   </div>

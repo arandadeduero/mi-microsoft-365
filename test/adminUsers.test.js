@@ -421,13 +421,17 @@ test.serial('a user\'s licenses can be removed and added, and a disabled account
 
   const page = await agent.get(`/admin/usuarios/${UID_ANA}`).expect(200);
   t.true(page.text.includes('todavía tiene licencias asignadas'));
-  t.true(page.text.includes(`name="removeSkuIds" value="${SKU_OLD}"`));
-  t.true(page.text.includes(`name="addSkuIds" value="${SKU_NEW}"`));
+  // One list: the license she has comes ticked, the other one does not
+  t.regex(page.text, new RegExp(`name="skuIds" value="${SKU_OLD}" id="sku-${SKU_OLD}" checked`));
+  t.regex(page.text, new RegExp(`name="skuIds" value="${SKU_NEW}" id="sku-${SKU_NEW}" *>`));
+  t.false(page.text.includes('removeSkuIds'));
+  t.false(page.text.includes('addSkuIds'));
 
+  // Untick the one she has, tick the other one
   await agent.post(`/admin/usuarios/${UID_ANA}/licencias`)
     .set('X-CSRF-Token', csrf)
     .type('form')
-    .send({ removeSkuIds: [SKU_OLD], addSkuIds: [SKU_NEW] })
+    .send({ shownSkuIds: [SKU_OLD, SKU_NEW], skuIds: [SKU_NEW] })
     .expect(302);
 
   const [call] = http.callsTo('post', `/v1.0/users/${UID_ANA}/assignLicense`);
@@ -436,6 +440,14 @@ test.serial('a user\'s licenses can be removed and added, and a disabled account
   // No usage location: Microsoft would refuse the license
   t.is(http.callsTo('patch', `/v1.0/users/${UID_ANA}`)[0].data.usageLocation, 'ES');
   t.true(auditEvents().some(e => e.event === 'admin.licenses_changed'));
+
+  // Nothing ticked and nothing shown (an empty or cut-down submission): she keeps what she has
+  const before = http.callsTo('post', `/v1.0/users/${UID_ANA}/assignLicense`).length;
+  await agent.post(`/admin/usuarios/${UID_ANA}/licencias`).set('X-CSRF-Token', csrf).type('form').send({}).expect(302);
+  // A ticked license she already has (and the other one left unticked) changes nothing either
+  await agent.post(`/admin/usuarios/${UID_ANA}/licencias`).set('X-CSRF-Token', csrf).type('form')
+    .send({ shownSkuIds: [SKU_OLD, SKU_NEW], skuIds: [SKU_OLD] }).expect(302);
+  t.is(http.callsTo('post', `/v1.0/users/${UID_ANA}/assignLicense`).length, before);
 });
 
 test.serial('when USERS_EXCEL_URL is set, /admin/usuarios/excel reads the Excel directly from SharePoint without uploading a file', async t => {

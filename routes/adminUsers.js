@@ -1366,22 +1366,24 @@ router.post('/admin/usuarios/:id/licencias', isAuthenticated, requireAdmin, asyn
     if (!isValidId(id)) return next(userError(404, 'Usuario no encontrado'));
 
     const token = req.session.accessToken;
-    const remove = asArray(req.body.removeSkuIds).filter(isValidId);
-    const add = asArray(req.body.addSkuIds).filter(isValidId);
+    // The form is one list: what is ticked is what the person should have. Only
+    // licenses the form showed (shownSkuIds) can change, so an empty or cut-down
+    // submission never strips licenses that were not on the page
+    const shown = new Set(asArray(req.body.shownSkuIds).filter(isValidId));
+    const wanted = new Set(asArray(req.body.skuIds).filter(sku => isValidId(sku) && shown.has(sku)));
     const back = `/admin/usuarios/${encodeURIComponent(id)}`;
-
-    if (remove.length === 0 && add.length === 0) {
-      req.session.adminUsersFlash = 'No había cambios de licencias que guardar.';
-      return res.redirect(back);
-    }
 
     try {
       const user = await getAdminUser(token, id);
       if (!user) return next(userError(404, 'Usuario no encontrado'));
       const current = new Set((await getUserLicensesById(token, user.id)).map(l => l.skuId));
-      // Only what really changes: Graph refuses adding a license already held
-      const toAdd = add.filter(sku => !current.has(sku) && !remove.includes(sku));
-      const toRemove = remove.filter(sku => current.has(sku));
+      const toAdd = [...wanted].filter(sku => !current.has(sku));
+      const toRemove = [...current].filter(sku => shown.has(sku) && !wanted.has(sku));
+
+      if (toAdd.length === 0 && toRemove.length === 0) {
+        req.session.adminUsersFlash = 'No había cambios de licencias que guardar.';
+        return res.redirect(back);
+      }
 
       // Microsoft refuses licenses for people without a usage location
       if (toAdd.length > 0 && !user.usageLocation) {
