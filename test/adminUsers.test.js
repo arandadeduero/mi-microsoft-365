@@ -349,6 +349,37 @@ test.serial('Excel multipart routes enforce CSRF and validate, sync-check, disab
   t.is(http.callsTo('put', `/v1.0/users/${UID_LUCIA}/manager/$ref`).length, 1);
 });
 
+test.serial('the import preview shows which managers would change, not only the fields', async t => {
+  const { agent, csrf } = await signInAs(t, ADMIN, { admin: true });
+  const UID_LUIS = '55555555-5555-5555-5555-555555555555';
+  const xlsxBuf = await buildWorkbookBuffer({
+    ACTIVOS: [
+      ['id_empleado', 'Trabajador', 'Departamento', 'Descripción', 'e_mail', 'ID responsable'],
+      ['1', 'JEFE, BOSS', 'Alcaldía', 'Alcalde', 'boss@arandadeduero.es', ''],
+      ['2', 'PEREZ, ANA', 'Obras', 'Técnica', 'ana@arandadeduero.es', '1'],
+      ['3', 'GOMEZ, LUIS', 'Obras', 'Peón', 'luis@arandadeduero.es', '1'],
+    ],
+  });
+  http.on('get', '/v1.0/users', { value: [
+    { id: UID_BOSS, displayName: 'Boss Jefe', userPrincipalName: 'boss@arandadeduero.es', employeeId: '1', accountEnabled: true },
+    { id: UID_ANA, displayName: 'Ana Perez', userPrincipalName: 'ana@arandadeduero.es', employeeId: '2', accountEnabled: true },
+    { id: UID_LUIS, displayName: 'Luis Gomez', userPrincipalName: 'luis@arandadeduero.es', employeeId: '3', accountEnabled: true },
+  ] });
+  // Ana already reports to Boss; Luis reports to somebody else
+  http.on('post', '/v1.0/$batch', ({ data }) => ({
+    responses: data.requests.map(r => (r.url.includes(UID_ANA)
+      ? { id: r.id, status: 200, body: { id: UID_BOSS, displayName: 'Boss Jefe' } }
+      : { id: r.id, status: 200, body: { id: 'otro', displayName: 'Otro Jefe' } })),
+  }));
+
+  const res = await agent.post('/admin/usuarios/excel/importar/preview').field('_csrf', csrf).attach('excelFile', xlsxBuf, 'plantilla.xlsx').expect(200);
+
+  t.true(res.text.includes('Responsables que cambian: 1'));
+  t.regex(res.text, /<code>responsable<\/code>: Otro Jefe &rarr; <strong>Boss Jefe<\/strong>/);
+  // Nothing is written by looking
+  t.is(http.callsTo('put', `/v1.0/users/${UID_LUIS}/manager/$ref`).length, 0);
+});
+
 test.serial('data quality fixes normalize job titles and update mailbox time zones preserving working hours', async t => {
   const { agent, csrf } = await signInAs(t, ADMIN, { admin: true });
 
