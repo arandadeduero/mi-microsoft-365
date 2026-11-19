@@ -1,0 +1,41 @@
+server.js
+  s_fce2362ad8a293::t_a998092f0c7aef 29,185
+AGENTS.md
+  s_fce2362ad8a293::t_a998092f0c7aef 45
+config/auditEvents.js
+  s_fce2362ad8a293::t_a998092f0c7aef 37-42
+README.md
+  s_fce2362ad8a293::t_a998092f0c7aef 39,146
+routes/adminGroups.js
+  s_fce2362ad8a293::t_a998092f0c7aef 1-243
+services/graphService.js
+  s_fce2362ad8a293::t_a998092f0c7aef 1949-2075,2104-2109
+test/adminGroups.test.js
+  s_fce2362ad8a293::t_a998092f0c7aef 1-263
+views/admin-group-new.ejs
+  s_fce2362ad8a293::t_a998092f0c7aef 1-56
+views/partials/header.ejs
+  s_fce2362ad8a293::t_a998092f0c7aef 118
+views/admin-group-detail.ejs
+  s_fce2362ad8a293::t_a998092f0c7aef 1-143
+views/admin-groups.ejs
+  s_fce2362ad8a293::t_a998092f0c7aef 1-69
+services/adminGroups.js
+  s_fce2362ad8a293::t_a998092f0c7aef 1-140
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "370dd616c8da535f1284f44a50654e8b66014b90",
+  "prompts": {},
+  "sessions": {
+    "s_fce2362ad8a293": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "abbfdd8e-3213-4c40-8035-e7366626bc8b",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Guillermo López <willyaranda@gmail.com>"
+    }
+  }
+}
