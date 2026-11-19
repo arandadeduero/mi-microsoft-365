@@ -1,4 +1,4 @@
-# CLAUDE.md
+# AGENTS.md
 
 Internal Microsoft 365 self-service portal for the Ayuntamiento de Aranda de Duero: Express 5 + EJS, signed in with Entra ID (MSAL), data from Microsoft Graph. UI text and the README are Spanish; code, comments, logs and this file are English.
 

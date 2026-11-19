@@ -317,7 +317,7 @@ mi-microsoft-365/
 ├── Dockerfile / .dockerignore        # Imagen de producción
 ├── docker-compose.yml                # Cómo ejecutarla en producción (imagen de GHCR, volúmenes, proxy delante)
 ├── Procfile                          # Configuración para desplegar en Heroku
-├── CLAUDE.md                         # Notas para trabajar en el código con Claude Code
+├── AGENTS.md                         # Notas para trabajar en el código con asistentes de IA
 │
 ├── .github/
 │   ├── dependabot.yml
