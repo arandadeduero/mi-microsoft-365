@@ -1,0 +1,14 @@
+AGENTS.md
+  h_3aa52f59e1a7c5 7,9-11,16-20,23,27-29,31-45,49-60,62-63,67-70,74-81,85-89,93-97,101,103-112,114,116,118-124,128
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2efcf97e0026cc9635a24bf54460cf21008bff5a",
+  "prompts": {},
+  "humans": {
+    "h_3aa52f59e1a7c5": {
+      "author": "Guillermo López <willyaranda@gmail.com>"
+    }
+  }
+}
