@@ -1946,6 +1946,133 @@ async function downloadSharedFile(accessToken, sharingUrl) {
   }
 }
 
+const ADMIN_GROUP_LIST_FIELDS = 'id,displayName,description,mail,mailEnabled,securityEnabled,groupTypes,visibility,createdDateTime,membershipRule,resourceProvisioningOptions,onPremisesSyncEnabled';
+const ADMIN_GROUP_DETAIL_FIELDS = `${ADMIN_GROUP_LIST_FIELDS},mailNickname,classification,expirationDateTime,renewedDateTime,membershipRuleProcessingState,isAssignableToRole,onPremisesLastSyncDateTime`;
+
+/**
+ * Every group of the tenant with what the admin list shows
+ * @param {string} accessToken - Valid access token
+ * @returns {Promise<Array>} Groups sorted by name
+ */
+async function listAdminGroups(accessToken) {
+  try {
+    const groups = await getAllPages(`${GRAPH_API_BASE}/groups`, accessToken, {
+      params: { $select: ADMIN_GROUP_LIST_FIELDS, $top: 999 },
+    });
+    return groups.sort((a, b) => (a.displayName || '').localeCompare(b.displayName || '', 'es'));
+  } catch (error) {
+    console.error('Error listing groups for admin:', error.response?.data || error.message);
+    throw graphError('Failed to list groups', error);
+  }
+}
+
+/**
+ * One group with every property the detail page shows
+ * @param {string} accessToken - Valid access token
+ * @param {string} groupId - Group ID
+ * @returns {Promise<Object|null>} The group, or null on 404
+ */
+async function getAdminGroup(accessToken, groupId) {
+  try {
+    const response = await graphRequest('get', `${GRAPH_API_BASE}/groups/${encodeURIComponent(groupId)}`, accessToken, {
+      params: { $select: ADMIN_GROUP_DETAIL_FIELDS },
+    });
+    return response.data;
+  } catch (error) {
+    if (error.response?.status === 404) return null;
+    console.error('Error fetching group for admin:', error.response?.data || error.message);
+    throw graphError('Failed to fetch group', error);
+  }
+}
+
+/**
+ * Create a Microsoft 365 group or a plain security group, owned by the creator
+ * @param {string} accessToken - Valid access token
+ * @param {{type: 'unified'|'security', displayName: string, description: string, mailNickname: string, visibility: string}} group
+ * @param {string} ownerId - Directory ID of the first owner
+ * @returns {Promise<Object>} The created group
+ */
+async function createGroup(accessToken, group, ownerId) {
+  const unified = group.type === 'unified';
+  const data = {
+    displayName: group.displayName,
+    mailNickname: group.mailNickname,
+    mailEnabled: unified,
+    securityEnabled: !unified,
+    groupTypes: unified ? ['Unified'] : [],
+    'owners@odata.bind': [`${GRAPH_API_BASE}/users/${encodeURIComponent(ownerId)}`],
+  };
+  if (group.description) data.description = group.description;
+  if (unified) data.visibility = group.visibility;
+  try {
+    const response = await graphRequest('post', `${GRAPH_API_BASE}/groups`, accessToken, {
+      data,
+      headers: { 'Content-Type': 'application/json' },
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error creating group:', error.response?.data || error.message);
+    throw graphError('Failed to create group', error);
+  }
+}
+
+/**
+ * Change a group's own properties (name, description, visibility)
+ * @param {string} accessToken - Valid access token
+ * @param {string} groupId - Group ID
+ * @param {Object} patch - Only the properties to change
+ * @returns {Promise<void>}
+ */
+async function updateGroup(accessToken, groupId, patch) {
+  try {
+    await graphRequest('patch', `${GRAPH_API_BASE}/groups/${encodeURIComponent(groupId)}`, accessToken, {
+      data: patch,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  } catch (error) {
+    console.error('Error updating group:', error.response?.data || error.message);
+    throw graphError('Failed to update group', error);
+  }
+}
+
+/**
+ * Make a user an owner of a group (already being one is fine)
+ * @param {string} accessToken - Valid access token
+ * @param {string} groupId - Group ID
+ * @param {string} userId - User directory ID
+ * @returns {Promise<void>}
+ */
+async function addGroupOwner(accessToken, groupId, userId) {
+  try {
+    await graphRequest('post', `${GRAPH_API_BASE}/groups/${encodeURIComponent(groupId)}/owners/$ref`, accessToken, {
+      data: { '@odata.id': `${GRAPH_API_BASE}/users/${encodeURIComponent(userId)}` },
+      headers: { 'Content-Type': 'application/json' },
+    });
+  } catch (error) {
+    const message = error.response?.data?.error?.message || '';
+    if (error.response?.status === 400 && message.includes('already exist')) return;
+    console.error('Error adding group owner:', error.response?.data || error.message);
+    throw graphError('Failed to add group owner', error);
+  }
+}
+
+/**
+ * Take a user off a group's owners (not being one is fine)
+ * @param {string} accessToken - Valid access token
+ * @param {string} groupId - Group ID
+ * @param {string} userId - User directory ID
+ * @returns {Promise<void>}
+ */
+async function removeGroupOwner(accessToken, groupId, userId) {
+  try {
+    await graphRequest('delete', `${GRAPH_API_BASE}/groups/${encodeURIComponent(groupId)}/owners/${encodeURIComponent(userId)}/$ref`, accessToken);
+  } catch (error) {
+    if (error.response?.status === 404) return;
+    console.error('Error removing group owner:', error.response?.data || error.message);
+    throw graphError('Failed to remove group owner', error);
+  }
+}
+
 module.exports = {
   resetGraphCaches,
   getUserProfile,
@@ -1974,6 +2101,12 @@ module.exports = {
   getAuthenticationMethods,
   getUserDevices,
   getAllUsers,
+  listAdminGroups,
+  getAdminGroup,
+  createGroup,
+  updateGroup,
+  addGroupOwner,
+  removeGroupOwner,
   getLicensedUsers,
   getUserById,
   getDirectReports,

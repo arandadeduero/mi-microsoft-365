@@ -36,6 +36,7 @@ Portal interno de autoservicio para los usuarios de Microsoft 365 del Ayuntamien
 - ✅ **Protección CSRF** - Cada formulario y cada petición desde el navegador lleva un token propio de la sesión
 - ✅ **Renovación silenciosa de tokens** - Los tokens de acceso se renuevan en segundo plano, así que los usuarios siguen con la sesión iniciada todo el tiempo que dura
 - ✅ **Aviso de administrador** - Quien tiene un rol de directorio de Entra ve un aviso ADMIN y sus roles
+- ✅ **Administración → Grupos** - Listado de todos los grupos (Microsoft 365, de seguridad, listas de Exchange y dinámicos), ficha con sus datos, propietarios y miembros, y creación y edición de grupos de Microsoft 365 y de seguridad. Los grupos dinámicos, los de Exchange y los sincronizados desde un directorio local se muestran solo en lectura
 - ✅ **Permisos por ruta** - `/blog` está restringido a una lista de usuarios que se guarda en `config/local.js`
 - ✅ **Sesiones persistentes** - Las sesiones se guardan en archivos, para mantener el inicio de sesión aunque se reinicie el servidor
 - ✅ **Páginas de error** - Página de error amable; el mensaje real solo se muestra fuera de producción
@@ -142,7 +143,7 @@ Tras el registro verás la página de información general de la aplicación. **
      - ✅ `Mail.Read.Shared` - Comprobar qué buzones compartidos puede abrir el usuario. El permiso deja a una aplicación leer el correo del usuario y el correo compartido al que tiene acceso; la aplicación solo pregunta si existe cada bandeja de entrada y nunca lee un mensaje
      - ✅ `Place.Read.All` - Leer la lista de salas de reuniones
      - ✅ `User.ReadWrite.All` - Administración → Usuarios: editar usuarios, responsables y licencias (solo funciona si quien entra es administrador)
-     - ✅ `Directory.ReadWrite.All` - Administración → Usuarios: añadir y quitar personas de grupos
+     - ✅ `Directory.ReadWrite.All` - Administración → Usuarios y Grupos: añadir y quitar personas de grupos, y crear y editar grupos
      - ✅ `User-PasswordProfile.ReadWrite.All` - Administración → Usuarios: restablecer contraseñas
      - Tras concederlos hay que cerrar sesión y volver a entrar. La corrección de zonas horarias de buzones exige además el rol de Administrador de Exchange.
      - ✅ `offline_access` - Mantener el acceso a los datos
