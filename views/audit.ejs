@@ -11,7 +11,7 @@
 
   <div class="card shadow-sm border-0 app-panel mb-4">
     <div class="card-body p-4">
-      <form action="/admin/audit" method="GET" class="row g-3 align-items-end">
+      <form action="/admin/auditoria" method="GET" class="row g-3 align-items-end">
         <div class="col-md-3">
           <label for="day" class="form-label">Día</label>
           <input type="date" class="form-control" id="day" name="day" value="<%= filters.day %>">
@@ -31,8 +31,8 @@
         </div>
         <div class="col-md-2 d-flex gap-2">
           <button type="submit" class="btn btn-primary">Filtrar</button>
-          <a href="/admin/audit" class="btn btn-outline-secondary">Quitar</a>
-          <a href="/admin/audit.csv?day=<%= encodeURIComponent(filters.day) %>&event=<%= encodeURIComponent(filters.event) %>&actor=<%= encodeURIComponent(filters.actor) %>" class="btn btn-outline-secondary">CSV</a>
+          <a href="/admin/auditoria" class="btn btn-outline-secondary">Quitar</a>
+          <a href="/admin/auditoria.csv?day=<%= encodeURIComponent(filters.day) %>&event=<%= encodeURIComponent(filters.event) %>&actor=<%= encodeURIComponent(filters.actor) %>" class="btn btn-outline-secondary">CSV</a>
         </div>
       </form>
     </div>

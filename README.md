@@ -576,9 +576,9 @@ Quién puede usar `/blog` no es una variable de entorno: se configura en `config
 | GET | `/salas` | Con sesión | Salas de reuniones libres a una hora dada |
 | GET | `/ayuda` | Con sesión | Página de ayuda |
 | POST | `/ayuda/contacto` | Con sesión | Escribir a Informática desde el buzón del usuario |
-| GET | `/admin/audit` | Administradores | El registro de auditoría, con filtros |
-| GET | `/admin/audit.csv` | Administradores | El mismo registro, para Excel |
-| GET | `/admin/cuentas` | Administradores | Cuentas que necesitan atención (leídas con el token de la aplicación) |
+| GET | `/admin/auditoria` | Administradores | El registro de auditoría, con filtros (`/admin/audit` redirige aquí) |
+| GET | `/admin/auditoria.csv` | Administradores | El mismo registro, para Excel |
+| GET | `/admin/usuarios/atencion` | Administradores | Cuentas que necesitan atención, leídas con el token de la aplicación (`/admin/cuentas` redirige aquí) |
 | GET | `/admin/licencias` | Administradores | Licencias compradas, en uso y libres |
 | GET | `/admin/avisos` | Administradores | El centro de mensajes de Microsoft |
 | GET | `/admin/solicitudes` | Administradores | Solicitudes de grupos pendientes |
@@ -696,7 +696,7 @@ Cada inquilino deja a los usuarios editar unos campos distintos de su perfil, y 
 
 ### Visor de auditoría
 
-Los usuarios que tienen un rol de directorio de Entra ID (los mismos que ven el aviso rojo ADMIN) tienen una entrada «Auditoría» en el menú. `/admin/audit` muestra los últimos siete días del registro de auditoría, lo más reciente primero, y se puede acotar a un día, a un tipo de evento o a una persona. Vale cualquier rol de directorio, no solo el de Administrador global.
+Los usuarios que tienen un rol de directorio de Entra ID (los mismos que ven el aviso rojo ADMIN) tienen una entrada «Auditoría» en el menú. `/admin/auditoria` muestra los últimos siete días del registro de auditoría, lo más reciente primero, y se puede acotar a un día, a un tipo de evento o a una persona. Vale cualquier rol de directorio, no solo el de Administrador global.
 
 ### Solicitudes de grupos
 

@@ -2,8 +2,7 @@
  * Admin Routes
  *
  * Pages for administrators only (users holding an Entra ID directory role):
- * - /admin/audit (and /admin/audit.csv) - The audit log
- * - /admin/cuentas - Accounts that need a look
+ * - /admin/auditoria (and /admin/auditoria.csv) - The audit log
  * - /admin/licencias - Licenses bought and left
  * - /admin/avisos - Microsoft's message center
  * - /admin/solicitudes - Group requests nobody has decided on
@@ -21,9 +20,9 @@ const permissions = require('../config/permissions');
 const { SKU_NAMES } = require('../config/licenseCatalog');
 const { getAppToken } = require('../services/tokenService');
 const { REGION } = require('../config/appConfig');
-const { getSubscribedSkus, getUsersForReview, getMfaRegistration, getRooms, getRoomEvents, getMyCalendars, getListMembers, createCalendarEvent, listAdminUsers } = require('../services/graphService');
+const { getSubscribedSkus, getRooms, getRoomEvents, getMyCalendars, getListMembers, createCalendarEvent, listAdminUsers } = require('../services/graphService');
 const commissions = require('../config/commissions');
-const { reviewAccounts, describeLicenseStock } = require('../services/accountReview');
+const { describeLicenseStock } = require('../services/accountReview');
 const { getServiceMessages } = require('../services/messageCenterService');
 const { listPending } = require('../services/requestStore');
 const { currentSettings, saveSettings } = require('../services/settingsStore');
@@ -44,11 +43,11 @@ function requireAdmin(req, res, next) {
 }
 
 /**
- * GET /admin/audit
+ * GET /admin/auditoria
  * The audit log, newest first: the last 7 days, or one day when given,
  * optionally only one kind of event or one person
  */
-router.get('/admin/audit', isAuthenticated, requireAdmin, async (req, res, next) => {
+router.get('/admin/auditoria', isAuthenticated, requireAdmin, async (req, res, next) => {
   try {
     const { filters, all, matching } = await filteredAudit(req.query);
 
@@ -63,6 +62,15 @@ router.get('/admin/audit', isAuthenticated, requireAdmin, async (req, res, next)
   } catch (error) {
     next(error);
   }
+});
+
+/**
+ * GET /admin/audit and /admin/audit.csv
+ * The audit log used to be here; old links keep working, with their filters
+ */
+router.get(['/admin/audit', '/admin/audit.csv'], (req, res) => {
+  const search = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
+  res.redirect(301, `/admin/auditoria${req.path.toLowerCase().endsWith('.csv') ? '.csv' : ''}${search}`);
 });
 
 /**
@@ -83,10 +91,10 @@ async function filteredAudit(query) {
 }
 
 /**
- * GET /admin/audit.csv
+ * GET /admin/auditoria.csv
  * The same entries as the page, for a spreadsheet
  */
-router.get('/admin/audit.csv', isAuthenticated, requireAdmin, async (req, res, next) => {
+router.get('/admin/auditoria.csv', isAuthenticated, requireAdmin, async (req, res, next) => {
   try {
     const { matching } = await filteredAudit(req.query);
     const cell = (value) => `"${String(value == null ? '' : value).replace(/"/g, '""')}"`;
@@ -100,35 +108,10 @@ router.get('/admin/audit.csv', isAuthenticated, requireAdmin, async (req, res, n
 });
 
 /**
- * GET /admin/cuentas and GET /admin/usuarios/atencion
- * Accounts that need a look, read with the app's token
+ * GET /admin/cuentas
+ * The accounts page now lives under Usuarios; the old address keeps working
  */
-async function renderAdminAccounts(req, res, next) {
-  try {
-    const appToken = await getAppToken();
-    const [listing, mfa, places] = await Promise.all([
-      getUsersForReview(appToken),
-      getMfaRegistration(appToken),
-      getRooms(req.session.accessToken),
-    ]);
-    const roomEmails = new Set((places || []).map(p => (p.emailAddress || '').toLowerCase()).filter(Boolean));
-    const review = listing
-      ? reviewAccounts(listing.users, {
-        signInsKnown: listing.signInsKnown,
-        mfa,
-        passwordMaxAgeDays: Number(process.env.PASSWORD_MAX_AGE_DAYS) || null,
-        roomEmails,
-      })
-      : null;
-
-    res.render('admin-accounts', { title: 'Cuentas que necesitan atención', currentPage: 'admin', review, signInsError: listing ? listing.signInsError : null });
-  } catch (error) {
-    next(error);
-  }
-}
-
-router.get('/admin/cuentas', isAuthenticated, requireAdmin, renderAdminAccounts);
-router.get('/admin/usuarios/atencion', isAuthenticated, requireAdmin, renderAdminAccounts);
+router.get('/admin/cuentas', (req, res) => res.redirect(301, '/admin/usuarios/atencion'));
 
 /**
  * GET /admin/licencias

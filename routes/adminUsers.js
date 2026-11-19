@@ -22,10 +22,13 @@ const { verifyCsrfToken } = require('../middleware/csrf');
 const { userError } = require('../middleware/errorHandler');
 const { auditRequest } = require('../services/auditService');
 const { getAppToken } = require('../services/tokenService');
+const { reviewAccounts } = require('../services/accountReview');
 const { mapWithConcurrency } = require('../services/asyncUtils');
 const { compareEs, DIRECTORY_ID } = require('../services/formatters');
 const {
   listAdminUsers,
+  getUsersForReview,
+  getMfaRegistration,
   fetchManagersBatch,
   fetchUserGroupsBatch,
   fetchUserLicensesBatch,
@@ -251,6 +254,33 @@ router.get('/admin/usuarios', isAuthenticated, requireAdmin, async (req, res, ne
       flash: popSessionValue(req, 'adminUsersFlash'),
       errorMsg: popSessionValue(req, 'adminUsersError'),
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /admin/usuarios/atencion
+ * Accounts that need a look, read with the app's token
+ */
+router.get('/admin/usuarios/atencion', isAuthenticated, requireAdmin, async (req, res, next) => {
+  try {
+    const appToken = await getAppToken();
+    const [listing, mfa, roomEmails] = await Promise.all([
+      getUsersForReview(appToken),
+      getMfaRegistration(appToken),
+      getRoomEmailSet(req.session.accessToken),
+    ]);
+    const review = listing
+      ? reviewAccounts(listing.users, {
+        signInsKnown: listing.signInsKnown,
+        mfa,
+        passwordMaxAgeDays: Number(process.env.PASSWORD_MAX_AGE_DAYS) || null,
+        roomEmails,
+      })
+      : null;
+
+    res.render('admin-accounts', { title: 'Cuentas que necesitan atención', currentPage: 'admin', review, signInsError: listing ? listing.signInsError : null });
   } catch (error) {
     next(error);
   }
