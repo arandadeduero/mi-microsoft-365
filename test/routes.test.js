@@ -50,6 +50,7 @@ test('pages load their styles, scripts and typeface from the app, not from other
   await request(app).get('/favicon.svg').expect(200);
   await request(app).get('/favicon.ico').expect(204);
   await request(app).get('/healthz').expect(204);
+  await request(app).get('/js/submit-loading.js').expect(200);
 });
 
 test('every response carries the security headers, and pages can only be shown by themselves', async t => {

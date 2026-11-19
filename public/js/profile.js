@@ -38,13 +38,17 @@
     }
   }
 
+  const submitBtn = document.getElementById('submitManagerCorrectionBtn');
+
   async function submitManagerCorrection() {
+    if (submitBtn.disabled) return;
     const select = document.getElementById('managerSelect');
     const option = select.options[select.selectedIndex];
     if (!select.value) {
       window.alert('Selecciona un responsable');
       return;
     }
+    window.setButtonLoading?.(submitBtn, true);
     try {
       const response = await fetch('/api/manager-correction', {
         method: 'POST',
@@ -61,10 +65,12 @@
     } catch (error) {
       console.error('Error submitting manager correction:', error);
       window.alert('No se pudo enviar la solicitud de corrección. Inténtalo de nuevo.');
+    } finally {
+      window.setButtonLoading?.(submitBtn, false);
     }
   }
 
   document.getElementById('openManagerDialogBtn')?.addEventListener('click', openManagerDialog);
-  document.getElementById('submitManagerCorrectionBtn')?.addEventListener('click', submitManagerCorrection);
+  submitBtn?.addEventListener('click', submitManagerCorrection);
   document.getElementById('closeManagerDialogBtn')?.addEventListener('click', () => modal().hide());
 })();

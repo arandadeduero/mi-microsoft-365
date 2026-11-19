@@ -18,6 +18,7 @@
   <% if (typeof currentPage === 'undefined' || currentPage !== 'login') { %>
   <script src="/vendor/bootstrap-5.3.3.bundle.min.js" defer></script>
   <% } %>
+  <script src="/js/submit-loading.js" defer></script>
   <% if (typeof scripts !== 'undefined' && Array.isArray(scripts)) { %>
     <% scripts.forEach(function(src) { %>
   <script src="<%= src %>" defer></script>
