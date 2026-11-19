@@ -64,6 +64,12 @@
             <% if (g.onPremisesSyncEnabled) { %><dt class="col-5">Origen</dt><dd class="col-7">Sincronizado desde un directorio local</dd><% } %>
             <dt class="col-5">Identificador</dt><dd class="col-7"><code class="small"><%= g.id %></code></dd>
           </dl>
+          <% if (links) { %>
+            <div class="d-flex flex-wrap gap-2 mt-3">
+              <a href="<%= links.mail %>" target="_blank" rel="noopener" class="btn btn-outline-secondary btn-sm">Buzón del grupo en Outlook</a>
+              <a href="<%= links.calendar %>" target="_blank" rel="noopener" class="btn btn-outline-secondary btn-sm">Calendario del grupo</a>
+            </div>
+          <% } %>
         </div>
       </div>
 
@@ -94,13 +100,75 @@
           <% } %>
         </div>
       </div>
+
+      <% if (g.hasTeam || g.isUnified) { %>
+      <div class="card shadow-sm border-0 app-panel mt-4">
+        <div class="card-body p-4">
+          <h2 class="h5 mb-3">Teams</h2>
+          <% if (!g.hasTeam) { %>
+            <p class="text-muted small mb-0">Este grupo no tiene equipo de Teams. Sin equipo no se le puede mencionar con <code>@</code> ni tiene canales.</p>
+          <% } else if (!team) { %>
+            <p class="text-muted small mb-0">Tiene equipo de Teams, pero ahora mismo no se han podido leer sus datos.</p>
+          <% } else { %>
+            <p class="mb-2">
+              <strong><%= team.name %></strong>
+              <% if (team.isArchived) { %><span class="badge bg-secondary">Archivado</span><% } %>
+            </p>
+            <% if (team.channels === null) { %>
+              <p class="text-muted small">No se han podido leer los canales.</p>
+            <% } else { %>
+              <p class="small text-muted mb-1">Canales (<%= team.channels.length %>)</p>
+              <ul class="small mb-3">
+                <% team.channels.forEach(function(channel) { %>
+                  <li><%= channel.name %><% if (channel.type === 'private') { %> <span class="badge bg-secondary">privado</span><% } else if (channel.type === 'shared') { %> <span class="badge bg-info text-dark">compartido</span><% } %></li>
+                <% }); %>
+              </ul>
+            <% } %>
+            <% if (team.webUrl) { %><a href="<%= team.webUrl %>" target="_blank" rel="noopener" class="btn btn-outline-primary btn-sm">Abrir en Teams</a><% } %>
+          <% } %>
+        </div>
+      </div>
+      <% } %>
+
+      <% if (pending.length > 0) { %>
+      <div class="card shadow-sm border-0 app-panel mt-4">
+        <div class="card-body p-4">
+          <h2 class="h5 mb-3">Solicitudes para entrar (<%= pending.length %>)</h2>
+          <ul class="small mb-2">
+            <% pending.forEach(function(request) { %>
+              <li><%= request.requester.name %> <span class="text-muted"><%= request.requester.email %></span></li>
+            <% }); %>
+          </ul>
+          <a href="/admin/solicitudes" class="btn btn-outline-secondary btn-sm">Ver las solicitudes pendientes</a>
+        </div>
+      </div>
+      <% } %>
+
+      <div class="card shadow-sm border-0 app-panel mt-4">
+        <div class="card-body p-4">
+          <h2 class="h5 mb-3">Cambios hechos desde el portal</h2>
+          <% if (history.length === 0) { %>
+            <p class="text-muted small mb-0">Nada en los últimos 30 días.</p>
+          <% } else { %>
+            <ul class="list-unstyled small mb-2">
+              <% history.forEach(function(row) { %>
+                <li class="mb-1"><span class="text-muted"><%= row.when %></span> · <%= row.label %><% if (row.actor) { %> <span class="text-muted">(<%= row.actor %>)</span><% } %></li>
+              <% }); %>
+            </ul>
+            <p class="text-muted small mb-0">Solo lo hecho desde este portal, de los últimos 30 días.</p>
+          <% } %>
+        </div>
+      </div>
     </div>
 
     <div class="col-lg-7">
       <div class="card shadow-sm border-0 app-panel">
         <div class="card-body p-4">
           <h2 class="h5 mb-3">Miembros (<%= members.length %>)</h2>
-          <p class="text-muted small">Se listan las personas; los grupos anidados no aparecen.</p>
+          <p class="text-muted small">
+            <%= summary.people %> persona<%= summary.people === 1 ? '' : 's' %><% if (summary.guests > 0) { %> (<%= summary.guests %> invitada<%= summary.guests === 1 ? '' : 's' %> de fuera)<% } %><% if (summary.groups > 0) { %> · y <%= summary.groups %> grupo<%= summary.groups === 1 ? '' : 's' %> dentro, más abajo<% } else if (summary.groups === null) { %> · no se han podido leer los grupos anidados<% } %>.
+            Aquí se listan las personas.
+          </p>
           <% if (g.manageable) { %>
           <form action="<%= base %>/miembros" method="POST" class="input-group mb-3">
             <input type="hidden" name="_csrf" value="<%= csrfToken() %>">
@@ -142,6 +210,15 @@
                 </tbody>
               </table>
             </div>
+          <% } %>
+          <% if (nested && nested.length > 0) { %>
+            <h3 class="h6 text-uppercase text-muted border-bottom pb-2 mt-4 mb-3">Grupos dentro de este grupo</h3>
+            <p class="text-muted small">Sus miembros también reciben lo que se mande a este grupo, pero no aparecen en la lista de arriba.</p>
+            <ul class="mb-0">
+              <% nested.forEach(function(inner) { %>
+                <li><a href="/admin/grupos/<%= encodeURIComponent(inner.id) %>"><%= inner.displayName %></a><% if (inner.mail) { %> <span class="text-muted small"><%= inner.mail %></span><% } %></li>
+              <% }); %>
+            </ul>
           <% } %>
         </div>
       </div>

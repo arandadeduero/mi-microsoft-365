@@ -176,7 +176,52 @@ function reviewGroups(groups, checks) {
   return review;
 }
 
+/**
+ * Links to a Microsoft 365 group's mailbox and calendar in Outlook on the web,
+ * built from its address (nothing is asked to Graph)
+ * @returns {{mail: string, calendar: string}|null} null for groups that have none
+ */
+function outlookGroupLinks(group) {
+  const [alias, domain] = String(group.mail || '').split('@');
+  if (!group.isUnified || !alias || !domain) return null;
+  const path = `group/${encodeURIComponent(domain)}/${encodeURIComponent(alias)}`;
+  return {
+    mail: `https://outlook.office.com/mail/${path}/email`,
+    calendar: `https://outlook.office.com/calendar/${path}/view/month`,
+  };
+}
+
+/**
+ * How many people, how many of them guests, and how many groups a group holds
+ * @param {Array} members - People (userType tells guests apart)
+ * @param {Array|null} nested - Groups inside, or null when they could not be read
+ */
+function summarizeMembers(members, nested) {
+  return {
+    people: members.length,
+    guests: members.filter(member => member.userType === 'Guest').length,
+    groups: nested === null ? null : nested.length,
+  };
+}
+
+/**
+ * What was done to a group from the portal, newest first
+ * @param {Array} entries - Audit entries (newest first)
+ * @param {string} groupId
+ * @param {Object} labels - Event name → what to call it
+ * @param {number} [limit]
+ */
+function groupHistory(entries, groupId, labels, limit = 15) {
+  return entries
+    .filter(entry => entry.groupId === groupId)
+    .slice(0, limit)
+    .map(entry => ({ time: entry.time, label: labels[entry.event] || entry.event, actor: entry.actor || null }));
+}
+
 module.exports = {
+  outlookGroupLinks,
+  summarizeMembers,
+  groupHistory,
   reviewGroups,
   MAX_BULK,
   parseAddressList,

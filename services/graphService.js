@@ -2036,6 +2036,48 @@ async function updateGroup(accessToken, groupId, patch) {
 }
 
 /**
+ * The Teams team behind a Microsoft 365 group (a team has the ID of its group)
+ * @param {string} accessToken - Valid access token
+ * @param {string} groupId - Group ID
+ * @returns {Promise<{name: string, isArchived: boolean, webUrl: string|null, channels: Array<{name: string, type: string}>|null}|null>}
+ *   null when the team cannot be read; channels null when only they cannot
+ */
+async function getGroupTeam(accessToken, groupId) {
+  const url = `${GRAPH_API_BASE}/teams/${encodeURIComponent(groupId)}`;
+  try {
+    const response = await graphRequest('get', url, accessToken, { params: { $select: 'id,displayName,isArchived,webUrl' } });
+    let channels = null;
+    try {
+      const list = await getAllPages(`${url}/channels`, accessToken, { params: { $select: 'id,displayName,membershipType' } });
+      channels = list.map(channel => ({ name: channel.displayName, type: channel.membershipType }));
+    } catch (error) {
+      // The team is still worth showing without its channels
+    }
+    return { name: response.data.displayName, isArchived: Boolean(response.data.isArchived), webUrl: response.data.webUrl || null, channels };
+  } catch (error) {
+    console.error('Error fetching the team of a group:', error.response?.data || error.message);
+    return null;
+  }
+}
+
+/**
+ * The groups that are members of a group
+ * @param {string} accessToken - Valid access token
+ * @param {string} groupId - Group ID
+ * @returns {Promise<Array|null>} Groups (id, name, mail), or null when they cannot be read
+ */
+async function getGroupNestedGroups(accessToken, groupId) {
+  try {
+    return await getAllPages(`${GRAPH_API_BASE}/groups/${encodeURIComponent(groupId)}/members/microsoft.graph.group`, accessToken, {
+      params: { $select: 'id,displayName,mail', $top: 999 },
+    });
+  } catch (error) {
+    console.error('Error fetching the groups inside a group:', error.response?.data || error.message);
+    return null;
+  }
+}
+
+/**
  * For many groups at once: how many owners each has (0, 1 or 2 meaning "2 or more")
  * and whether it has any member. Two reads per group, in batches of 20 run side
  * by side; one that cannot be read leaves null, never "none".
@@ -2137,6 +2179,8 @@ module.exports = {
   getUserDevices,
   getAllUsers,
   listAdminGroups,
+  getGroupTeam,
+  getGroupNestedGroups,
   getGroupsChecks,
   getAdminGroup,
   createGroup,
