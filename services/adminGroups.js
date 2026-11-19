@@ -62,13 +62,18 @@ function filterAdminGroups(groups, { q = '', kind = '' } = {}) {
 
 /** Turn a name into a mail alias: ASCII lowercase letters, digits, dot, dash, underscore */
 function toMailAlias(name) {
-  return String(name || '')
+  const alias = String(name || '')
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
+    .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9._-]+/g, '-')
-    .replace(/^[-.]+|[-.]+$/g, '')
     .slice(0, MAX_ALIAS);
+  // Trimmed by hand: a regex for trailing dashes backtracks badly on long runs of them
+  let start = 0;
+  let end = alias.length;
+  while (start < end && '-.'.includes(alias[start])) start += 1;
+  while (end > start && '-.'.includes(alias[end - 1])) end -= 1;
+  return alias.slice(start, end);
 }
 
 /**

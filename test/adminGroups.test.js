@@ -65,6 +65,9 @@ test.beforeEach(() => {
 test('mail aliases are plain ASCII and groups are described by what Graph can do with them', t => {
   t.is(toMailAlias('Informática y Redes!'), 'informatica-y-redes');
   t.is(toMailAlias('  --Ñandú.2026-- '), 'nandu.2026');
+  // Long runs of dashes are cut without trouble
+  t.is(toMailAlias(`${'-'.repeat(50000)}a${'-'.repeat(50000)}!`), '');
+  t.is(toMailAlias('---a---'), 'a');
   t.true(describeAdminGroup(GROUPS[GID_INFO]).manageable);
   t.is(describeAdminGroup(GROUPS[GID_DYN]).kind, 'Seguridad dinámico');
   t.false(describeAdminGroup(GROUPS[GID_DYN]).manageable);
