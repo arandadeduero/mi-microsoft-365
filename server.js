@@ -27,6 +27,7 @@ const groupRequestRoutes = require('./routes/groupRequests');
 const adminRoutes = require('./routes/admin');
 const adminUsersRoutes = require('./routes/adminUsers');
 const adminGroupsRoutes = require('./routes/adminGroups');
+const { startExcelDriftSchedule } = require('./services/excelDrift');
 const ownedGroupRoutes = require('./routes/ownedGroups');
 const helpRoutes = require('./routes/help');
 const roomRoutes = require('./routes/rooms');
@@ -212,6 +213,8 @@ if (require.main === module) {
     console.log(`URL: http://localhost:${PORT}`);
     console.log('=================================');
     
+    startExcelDriftSchedule();
+
     // Warn if required environment variables are missing
     if (!process.env.CLIENT_ID || !process.env.CLIENT_SECRET || !process.env.TENANT_ID) {
       console.warn('⚠️  WARNING: Missing required environment variables!');

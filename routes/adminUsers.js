@@ -24,7 +24,8 @@ const { auditRequest } = require('../services/auditService');
 const { getAppToken } = require('../services/tokenService');
 const { reviewAccounts } = require('../services/accountReview');
 const { mapWithConcurrency } = require('../services/asyncUtils');
-const { compareEs, DIRECTORY_ID } = require('../services/formatters');
+const { compareEs, DIRECTORY_ID, formatDateTime } = require('../services/formatters');
+const { readExcelDrift } = require('../services/excelDrift');
 const {
   listAdminUsers,
   getUsersForReview,
@@ -246,6 +247,7 @@ router.get('/admin/usuarios', isAuthenticated, requireAdmin, async (req, res, ne
       title: 'Usuarios',
       currentPage: 'admin',
       activeTab: 'directorio',
+      drift: currentDrift(),
       users: filtered,
       totalUsers: totalCount,
       filters,
@@ -291,6 +293,12 @@ router.get('/admin/usuarios/atencion', isAuthenticated, requireAdmin, async (req
 // 2. Excel Workflows (/admin/usuarios/excel/*)
 // ============================================================================
 
+// The last daily check of the Excel, ready to show
+function currentDrift() {
+  const drift = readExcelDrift();
+  return drift ? { ...drift, when: formatDateTime(drift.checkedAt) } : null;
+}
+
 function renderExcelPage(res, overrides = {}) {
   res.render('admin-users-excel', {
     title: 'Usuarios · Excel',
@@ -298,6 +306,7 @@ function renderExcelPage(res, overrides = {}) {
     activeTab: 'excel',
     excelSection: 'validar',
     excelUrl: appConfig.USERS_EXCEL_URL || '',
+    drift: currentDrift(),
     validationResult: null,
     syncResult: null,
     disableResult: null,

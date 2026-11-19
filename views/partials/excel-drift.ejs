@@ -1,0 +1,26 @@
+<% if (typeof drift !== 'undefined' && drift) { %>
+  <%
+    const items = drift.error ? [] : [
+      [drift.toDisable, 'bajas por aplicar'],
+      [drift.toCreate, 'altas por crear'],
+      [drift.fieldChanges, 'personas con otros datos'],
+      [drift.managerChanges, 'responsables distintos'],
+      [drift.notInExcel, 'cuentas activas que no están en el Excel'],
+    ].filter(function(item) { return item[0] > 0; });
+  %>
+  <% if (drift.error) { %>
+    <div class="alert alert-secondary py-2 small" role="status">
+      La comprobación automática del Excel (<%= drift.when %>) no ha funcionado: <%= drift.error %>. Puedes comprobarlo a mano en la pestaña Excel.
+    </div>
+  <% } else if (items.length === 0) { %>
+    <div class="alert alert-success py-2 small" role="status">
+      El Excel y Microsoft 365 coinciden (última comprobación: <%= drift.when %>).
+    </div>
+  <% } else { %>
+    <div class="alert alert-warning py-2 small" role="status">
+      <strong>El Excel y Microsoft 365 no coinciden</strong> (última comprobación: <%= drift.when %>):
+      <%= items.map(function(item) { return item[0] + ' ' + item[1]; }).join(' · ') %>.
+      <a href="/admin/usuarios/excel" class="alert-link">Revisar en la pestaña Excel</a>
+    </div>
+  <% } %>
+<% } %>

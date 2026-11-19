@@ -16,6 +16,8 @@
 
   <%- include('partials/admin-users-nav', { activeTab: 'excel' }) %>
 
+  <%- include('partials/excel-drift') %>
+
   <% if (typeof flash !== 'undefined' && flash) { %>
     <div class="alert alert-success" role="status"><%= flash %></div>
   <% } %>
