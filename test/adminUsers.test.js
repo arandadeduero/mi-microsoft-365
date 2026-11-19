@@ -349,6 +349,31 @@ test.serial('Excel multipart routes enforce CSRF and validate, sync-check, disab
   t.is(http.callsTo('put', `/v1.0/users/${UID_LUCIA}/manager/$ref`).length, 1);
 });
 
+test.serial('the employee type list offers the types of the Ayuntamiento, and keeps a value that is not in it', async t => {
+  const { agent } = await signInAs(t, ADMIN, { admin: true });
+  const stubUser = (employeeType) => {
+    http.on('get', `/v1.0/users/${UID_ANA}`, { id: UID_ANA, displayName: 'Ana Pérez', userPrincipalName: 'ana@arandadeduero.es', accountEnabled: true, employeeType });
+    http.on('get', `/users/${UID_ANA}/photo/$value`, () => { throw httpError(404); });
+    http.on('get', `/users/${UID_ANA}/manager`, () => { throw httpError(404); });
+    http.on('get', `/users/${UID_ANA}/memberOf/microsoft.graph.group`, { value: [] });
+    http.on('get', `/users/${UID_ANA}/licenseDetails`, { value: [] });
+    http.on('get', '/v1.0/groups', { value: [] });
+    http.on('get', '/v1.0/users', { value: [] });
+    http.on('get', '/v1.0/subscribedSkus', { value: [] });
+  };
+  const select = (html) => html.split('id="employeeType"')[1].split('</select>')[0];
+
+  stubUser('Laboral');
+  const page = select((await agent.get(`/admin/usuarios/${UID_ANA}`).expect(200)).text);
+  for (const type of ['Funcionario', 'Laboral', 'Programa de empleo', 'Concejal', 'Eventual']) t.true(page.includes(`value="${type}"`), type);
+  t.regex(page, /value="Laboral"[^>]* selected/);
+  for (const old of ['Employee', 'Contractor', 'Consultant', 'Vendor']) t.false(page.includes(`value="${old}"`), old);
+
+  // Somebody who already has another value does not lose it by opening the page
+  stubUser('Contractor');
+  t.regex(select((await agent.get(`/admin/usuarios/${UID_ANA}`).expect(200)).text), /value="Contractor"[^>]* selected/);
+});
+
 test.serial('the import preview shows which managers would change, not only the fields', async t => {
   const { agent, csrf } = await signInAs(t, ADMIN, { admin: true });
   const UID_LUIS = '55555555-5555-5555-5555-555555555555';
