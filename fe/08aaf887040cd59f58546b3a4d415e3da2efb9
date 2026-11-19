@@ -1,0 +1,21 @@
+test/adminGroups.test.js
+  s_fce2362ad8a293::t_0f4a8091762c79 68-70
+services/adminGroups.js
+  s_fce2362ad8a293::t_0f4a8091762c79 65,67,71-76
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fe08aaf887040cd59f58546b3a4d415e3da2efb9",
+  "prompts": {},
+  "sessions": {
+    "s_fce2362ad8a293": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "abbfdd8e-3213-4c40-8035-e7366626bc8b",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Guillermo López <willyaranda@gmail.com>"
+    }
+  }
+}
