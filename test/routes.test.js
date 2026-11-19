@@ -47,6 +47,7 @@ test('pages load their styles, scripts and typeface from the app, not from other
   t.true(vendorCss.headers['cache-control'].includes('immutable'));
   await request(app).get('/vendor/bootstrap-5.3.3.bundle.min.js').expect(200);
   await request(app).get('/vendor/fonts/outfit-latin.woff2').expect(200).expect('Content-Type', 'font/woff2');
+  await request(app).get('/js/theme.js').expect(200);
   await request(app).get('/favicon.svg').expect(200);
   await request(app).get('/favicon.ico').expect(204);
   await request(app).get('/healthz').expect(204);
