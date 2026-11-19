@@ -132,6 +132,14 @@ test('the import plan says which managers really change', t => {
   t.is(plan.summary.managerNotFound, 1);
 });
 
+test('the credentials email names the welcome guide only when there is a link for it', t => {
+  const without = decodeURIComponent(buildResetCredentialLinks('ana@arandadeduero.es', 'Pw-1234-Pw').mailtoUrl);
+  t.false(without.includes('guía de bienvenida'));
+  t.true(without.includes('password: Pw-1234-Pw'));
+  const withGuide = decodeURIComponent(buildResetCredentialLinks('ana@arandadeduero.es', 'Pw-1234-Pw', { welcomeUrl: 'https://guia.example/bienvenida' }).mailtoUrl);
+  t.true(withGuide.includes('Sigue la guía de bienvenida en este enlace https://guia.example/bienvenida'));
+});
+
 test('passwords and credential links', t => {
   t.regex(generateTempPassword(), /^\S+-\d{4}-\S+$/);
   const links = buildResetCredentialLinks('ana@arandadeduero.es', 'Pw-1234-Pw');
