@@ -107,6 +107,15 @@
             <input type="email" name="user" class="form-control" placeholder="Correo de la persona a añadir" aria-label="Correo de la persona a añadir" required>
             <button type="submit" class="btn btn-outline-primary">Añadir miembro</button>
           </form>
+          <details class="mb-3">
+            <summary class="small">Añadir varias personas a la vez</summary>
+            <form action="<%= base %>/miembros/lote/vista-previa" method="POST" class="mt-2">
+              <input type="hidden" name="_csrf" value="<%= csrfToken() %>">
+              <label for="addresses" class="form-label small">Pega los correos, uno por línea (vale una columna copiada de Excel, o separados por comas o punto y coma)</label>
+              <textarea id="addresses" name="addresses" rows="6" class="form-control mb-2" placeholder="ana@arandadeduero.es&#10;luis@arandadeduero.es" required></textarea>
+              <button type="submit" class="btn btn-outline-primary">Revisar antes de añadir</button>
+            </form>
+          </details>
           <% } %>
           <% if (members.length === 0) { %>
             <p class="text-muted mb-0">Este grupo no tiene miembros.</p>

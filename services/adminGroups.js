@@ -13,6 +13,8 @@ const GROUP_PREFIX = 'gr-';
 const MAX_NAME = 256;
 const MAX_DESCRIPTION = 1024;
 const MAX_ALIAS = 64;
+// People added to a group in one go
+const MAX_BULK = 200;
 
 /**
  * Describe a group for the lists and the detail page.
@@ -133,7 +135,28 @@ function validateGroupEdit(body) {
   return null;
 }
 
+/**
+ * Read a pasted list of addresses: one per line, or separated by commas or
+ * semicolons, also as copied from Outlook ("Ana Pérez <ana@x.es>").
+ * @returns {{ addresses: string[], invalid: string[] }} addresses lowercase and without repeats; invalid are the entries that are not an address
+ */
+function parseAddressList(text) {
+  const addresses = [];
+  const invalid = [];
+  for (const entry of String(text || '').split(/[\n\r,;]+/)) {
+    const raw = entry.trim();
+    if (!raw) continue;
+    const inside = raw.match(/<([^<>\s]+)>\s*$/);
+    const candidate = (inside ? inside[1] : raw).toLowerCase();
+    if (!/^[^\s@<>]+@[^\s@<>]+$/.test(candidate)) invalid.push(raw);
+    else if (!addresses.includes(candidate)) addresses.push(candidate);
+  }
+  return { addresses, invalid };
+}
+
 module.exports = {
+  MAX_BULK,
+  parseAddressList,
   GROUP_PREFIX,
   VISIBILITIES,
   describeAdminGroup,

@@ -2,6 +2,7 @@
  * Admin Groups Routes (/admin/grupos/*)
  *
  * - /admin/grupos        - List of every group, filter by name and kind
+ * - /admin/grupos/:id/miembros/lote - Several people at once, with a preview
  * - /admin/grupos-distribucion - The Exchange mailing lists (read-only: Graph cannot change them)
  * - /admin/grupos/nuevo  - Create a Microsoft 365 group or a security group
  * - /admin/grupos/:id    - Properties, owners and members; edit what Graph lets us
@@ -15,6 +16,7 @@ const { isAuthenticated } = require('../middleware/auth');
 const { userError } = require('../middleware/errorHandler');
 const { auditRequest } = require('../services/auditService');
 const { compareEs, DIRECTORY_ID } = require('../services/formatters');
+const { mapWithConcurrency } = require('../services/asyncUtils');
 const {
   listAdminGroups,
   getAdminGroup,
@@ -29,6 +31,8 @@ const {
   getAdminUser,
 } = require('../services/graphService');
 const {
+  MAX_BULK,
+  parseAddressList,
   GROUP_PREFIX,
   VISIBILITIES,
   describeAdminGroup,
@@ -46,6 +50,7 @@ function requireAdmin(req, res, next) {
   next(userError(403, 'Esta página es solo para administradores'));
 }
 
+const asArray = (val) => (Array.isArray(val) ? val : (val ? [val] : []));
 const isValidId = (id) => typeof id === 'string' && DIRECTORY_ID.test(id);
 const flashTo = (req, key, value) => { req.session[key] = value; };
 
@@ -239,6 +244,64 @@ router.post('/admin/grupos/:id/miembros/:userId/quitar', isAuthenticated, requir
   event: (token, group, userId) => removeUserFromGroup(token, group.id, userId),
   done: { event: 'admin.group_member_removed', message: 'Miembro quitado.' },
   notFound: 'Usuario no válido.',
+}));
+
+// Several people at once: paste the addresses, look at what would happen, then confirm
+router.post('/admin/grupos/:id/miembros/lote/vista-previa', isAuthenticated, requireAdmin, async (req, res, next) => {
+  try {
+    const group = await loadGroup(req, next);
+    if (!group) return undefined;
+    const back = `/admin/grupos/${encodeURIComponent(group.id)}`;
+    const fail = (message) => { flashTo(req, 'adminGroupsError', message); return res.redirect(back); };
+    if (!group.manageable) return fail(group.readOnlyReason);
+
+    const { addresses, invalid } = parseAddressList(req.body.addresses);
+    if (addresses.length === 0 && invalid.length === 0) return fail('Escribe al menos un correo.');
+    if (addresses.length + invalid.length > MAX_BULK) return fail(`Como mucho ${MAX_BULK} personas cada vez.`);
+
+    const token = req.session.accessToken;
+    const memberIds = new Set((await getGroupMembers(token, group.id)).map(member => member.id));
+    const rows = await mapWithConcurrency(addresses, 5, async (address) => {
+      try {
+        const user = await getAdminUser(token, address);
+        if (!user) return { address, status: 'notfound' };
+        return { address, user, status: memberIds.has(user.id) ? 'member' : 'add' };
+      } catch (err) {
+        if (err.graphStatus === 401) throw err;
+        return { address, status: 'error' };
+      }
+    });
+    return res.render('admin-group-bulk', {
+      title: `Añadir personas a ${group.displayName}`,
+      currentPage: 'admin',
+      group,
+      rows,
+      invalid,
+      toAdd: rows.filter(row => row.status === 'add'),
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/admin/grupos/:id/miembros/lote', isAuthenticated, requireAdmin, groupAction(async (req, group) => {
+  const ids = [...new Set(asArray(req.body.userIds).filter(isValidId))].slice(0, MAX_BULK);
+  if (ids.length === 0) { flashTo(req, 'adminGroupsError', 'No había a nadie que añadir.'); return; }
+  const token = req.session.accessToken;
+  let added = 0;
+  let failed = 0;
+  await mapWithConcurrency(ids, 5, async (id) => {
+    try {
+      await addUserToGroup(token, group.id, id);
+      added += 1;
+    } catch (err) {
+      if (err.graphStatus === 401) throw err;
+      failed += 1;
+    }
+  });
+  auditRequest(req, 'admin.group_members_bulk_added', { groupId: group.id, added, failed });
+  flashTo(req, 'adminGroupsFlash', `Añadidas ${added} persona${added === 1 ? '' : 's'}.`);
+  if (failed > 0) flashTo(req, 'adminGroupsError', `No se pudo añadir a ${failed} persona${failed === 1 ? '' : 's'}; vuelve a intentarlo con ellas.`);
 }));
 
 router.post('/admin/grupos/:id/propietarios', isAuthenticated, requireAdmin, userChange({

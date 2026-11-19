@@ -1,0 +1,56 @@
+<%- include('partials/header', { scripts: ['/js/confirm.js'] }) %>
+<%
+  const base = '/admin/grupos/' + encodeURIComponent(group.id);
+  const labels = { add: ['Se añadirá', 'bg-success'], member: ['Ya es miembro', 'bg-secondary'], notfound: ['No se ha encontrado', 'bg-warning text-dark'], error: ['No se ha podido comprobar', 'bg-danger'] };
+%>
+
+<main class="container py-4 page-shell page-error">
+  <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+    <h1 class="h2 mb-0 page-title">Añadir personas a «<%= group.displayName %>»</h1>
+    <a href="<%= base %>" class="btn btn-outline-secondary btn-sm">&larr; Volver al grupo</a>
+  </div>
+
+  <div class="card shadow-sm border-0 app-panel">
+    <div class="card-body p-4">
+      <p>
+        <strong><%= toAdd.length %></strong> de <strong><%= rows.length + invalid.length %></strong> se añadirán. Aún no se ha cambiado nada: revisa la lista y confirma.
+      </p>
+
+      <% if (invalid.length > 0) { %>
+        <div class="alert alert-warning py-2" role="alert">
+          Esto no parece un correo y se ha ignorado: <%= invalid.join(' · ') %>
+        </div>
+      <% } %>
+
+      <% if (rows.length > 0) { %>
+        <div class="table-responsive mb-3">
+          <table class="table align-middle mb-0">
+            <thead><tr><th>Correo</th><th>Persona</th><th>Qué pasará</th></tr></thead>
+            <tbody>
+              <% rows.forEach(function(row) { %>
+                <tr>
+                  <td><%= row.address %></td>
+                  <td><%= row.user ? row.user.displayName : '—' %></td>
+                  <td><span class="badge <%= labels[row.status][1] %>"><%= labels[row.status][0] %></span></td>
+                </tr>
+              <% }); %>
+            </tbody>
+          </table>
+        </div>
+      <% } %>
+
+      <% if (toAdd.length > 0) { %>
+        <form action="<%= base %>/miembros/lote" method="POST" data-confirm="¿Añadir <%= toAdd.length %> personas a <%= group.displayName %>?">
+          <input type="hidden" name="_csrf" value="<%= csrfToken() %>">
+          <% toAdd.forEach(function(row) { %><input type="hidden" name="userIds" value="<%= row.user.id %>"><% }); %>
+          <button type="submit" class="btn btn-primary">Añadir <%= toAdd.length %> persona<%= toAdd.length === 1 ? '' : 's' %></button>
+          <a href="<%= base %>" class="btn btn-outline-secondary">Cancelar</a>
+        </form>
+      <% } else { %>
+        <p class="text-muted mb-0">No hay a nadie que añadir.</p>
+      <% } %>
+    </div>
+  </div>
+</main>
+
+<%- include('partials/footer') %>
