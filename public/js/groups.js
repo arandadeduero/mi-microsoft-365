@@ -7,12 +7,16 @@
   const dialog = document.getElementById('reportDialog');
   if (!sendButton || !dialog) return;
 
+  const countEl = document.getElementById('selectedCount');
   const modal = () => bootstrap.Modal.getOrCreateInstance(dialog);
   const selected = () => checkboxes.filter((cb) => cb.checked).map((cb) => ({ id: cb.dataset.groupId, name: cb.dataset.groupName }));
 
   function updateSelection() {
-    const count = selected().length;
-    document.getElementById('selectedCount').textContent = count;
+    let count = 0;
+    for (let i = 0; i < checkboxes.length; i += 1) {
+      if (checkboxes[i].checked) count += 1;
+    }
+    countEl.textContent = count;
     sendButton.disabled = count === 0;
   }
 
@@ -20,12 +24,13 @@
     const groups = selected();
     if (groups.length === 0) return;
     const list = document.getElementById('selectedGroupsList');
-    list.replaceChildren();
+    const fragment = document.createDocumentFragment();
     groups.forEach((group) => {
       const item = document.createElement('li');
       item.textContent = group.name;
-      list.appendChild(item);
+      fragment.appendChild(item);
     });
+    list.replaceChildren(fragment);
     modal().show();
   }
 
@@ -51,7 +56,9 @@
     }
   }
 
-  checkboxes.forEach((cb) => cb.addEventListener('change', updateSelection));
+  document.addEventListener('change', (event) => {
+    if (event.target.classList?.contains('group-checkbox')) updateSelection();
+  });
   sendButton.addEventListener('click', openDialog);
   document.getElementById('submitGroupRequestBtn').addEventListener('click', submitRequest);
   document.getElementById('closeDialogBtn').addEventListener('click', () => modal().hide());

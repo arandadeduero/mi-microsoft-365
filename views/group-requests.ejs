@@ -1,6 +1,6 @@
 <%- include('partials/header') %>
 
-<% const formatDate = (value) => new Date(value).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' }); %>
+<% const formatDate = formatLongDate; %>
 <% const statusLabels = { pending: 'Pendiente', approved: 'Aprobada', rejected: 'Rechazada' }; %>
 <% const statusBadges = { pending: 'bg-warning text-dark', approved: 'bg-success', rejected: 'bg-secondary' }; %>
 

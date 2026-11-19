@@ -11,9 +11,10 @@
 
   const valueOf = (row, key, type) => (type === 'number' ? Number(row.dataset[key]) || 0 : row.dataset[key] || '');
 
+  const textCollator = new Intl.Collator('es', { sensitivity: 'base' });
   const compare = (type) => (type === 'number'
     ? (a, b) => a - b
-    : (a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+    : (a, b) => textCollator.compare(a, b));
 
   buttons.forEach((button) => {
     button.addEventListener('click', () => {
@@ -31,7 +32,7 @@
         const result = order(valueOf(a, key, type), valueOf(b, key, type));
         return descending ? -result : result;
       });
-      rows.forEach((row) => body.appendChild(row));
+      body.append(...rows);
     });
   });
 })();

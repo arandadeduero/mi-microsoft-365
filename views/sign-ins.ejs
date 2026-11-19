@@ -32,7 +32,7 @@
             <tbody>
               <% signIns.forEach(function(entry) { %>
                 <tr>
-                  <td><%= new Date(entry.when).toLocaleString('es-ES', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' }) %></td>
+                  <td><%= formatSignInDate(entry.when) %></td>
                   <td><%= entry.app %></td>
                   <td><%= entry.place %><% if (entry.ip) { %><br><span class="text-muted small"><%= entry.ip %></span><% } %></td>
                   <td><%= entry.device %></td>

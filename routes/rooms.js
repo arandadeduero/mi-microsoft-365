@@ -12,20 +12,17 @@ const router = express.Router();
 const { REGION } = require('../config/appConfig');
 const { isAuthenticated } = require('../middleware/auth');
 const { getRooms, getSchedules } = require('../services/graphService');
+const { compareEs, madridIsoDateTime } = require('../services/formatters');
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
+const AVAILABILITY_RANK = new Map([[true, 0], [null, 1], [false, 2]]);
 
 /**
  * Today's date and the next full hour in Madrid, as the form expects them
  */
 function defaultSlot(now = new Date()) {
-  // sv-SE formats as "2026-10-12 09:41"
-  const [date, time] = new Intl.DateTimeFormat('sv-SE', {
-    timeZone: 'Europe/Madrid',
-    dateStyle: 'short',
-    timeStyle: 'short',
-  }).format(now).split(' ');
+  const [date, time] = madridIsoDateTime(now).split(' ');
   const hour = Math.min(Number(time.slice(0, 2)) + 1, 22);
   const pad = (value) => String(value).padStart(2, '0');
   return { date, start: `${pad(hour)}:00`, end: `${pad(hour + 1)}:00` };
@@ -87,8 +84,7 @@ router.get('/salas', isAuthenticated, async (req, res, next) => {
         where: whereIs(room),
         free: null,
         bookingUrl: valid ? bookingUrl(room, slot) : null,
-      }))
-      .sort((a, b) => a.name.localeCompare(b.name, 'es'));
+      }));
     let availabilityKnown = true;
 
     // Only a search asks the calendars; the list itself needs no date
@@ -105,7 +101,9 @@ router.get('/salas', isAuthenticated, async (req, res, next) => {
       rooms = rooms
         .map(room => ({ ...room, free: isFree(byAddress.get(room.email.toLowerCase())) }))
         // Free first, then unknown, then busy
-        .sort((a, b) => [true, null, false].indexOf(a.free) - [true, null, false].indexOf(b.free) || a.name.localeCompare(b.name, 'es'));
+        .sort((a, b) => AVAILABILITY_RANK.get(a.free) - AVAILABILITY_RANK.get(b.free) || compareEs(a.name, b.name));
+    } else if (rooms) {
+      rooms.sort((a, b) => compareEs(a.name, b.name));
     }
 
     res.render('rooms', {

@@ -4,12 +4,25 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title><%= title %> · <%= appName %> · <%= orgName %></title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preload" as="font" href="/vendor/fonts/outfit-latin.woff2" type="font/woff2" crossorigin>
+  <% if (typeof csrfMeta !== 'undefined' && csrfMeta) { %>
+  <meta name="csrf-token" content="<%= csrfToken() %>">
+  <% } %>
 
   <!-- Bootstrap 5 and the Outfit typeface are served by the app (public/vendor): pages load nothing from other servers -->
   <link rel="stylesheet" href="/vendor/bootstrap-5.3.3.min.css">
 
   <!-- Custom CSS (declares the typeface) -->
   <link rel="stylesheet" href="/css/custom.css">
+  <% if (typeof currentPage === 'undefined' || currentPage !== 'login') { %>
+  <script src="/vendor/bootstrap-5.3.3.bundle.min.js" defer></script>
+  <% } %>
+  <% if (typeof scripts !== 'undefined' && Array.isArray(scripts)) { %>
+    <% scripts.forEach(function(src) { %>
+  <script src="<%= src %>" defer></script>
+    <% }); %>
+  <% } %>
 </head>
 <body class="d-flex flex-column min-vh-100 app-shell">
   <% if (typeof isAdmin !== 'undefined' && isAdmin) { %>
@@ -52,6 +65,7 @@
               <li><a class="<%= itemClass('/account/sign-ins') %>" href="/account/sign-ins">Mis inicios de sesión</a></li>
               <li><a class="<%= itemClass('/account/apps') %>" href="/account/apps">Aplicaciones con acceso</a></li>
               <li><a class="<%= itemClass('/account/sharing') %>" href="/account/sharing">Qué comparto fuera</a></li>
+              <li><a class="<%= itemClass('/account/calendars') %>" href="/account/calendars">Mis calendarios</a></li>
               <% if (typeof hasSharedMailboxes !== 'undefined' && hasSharedMailboxes) { %>
               <li><a class="<%= itemClass('/account/mailboxes') %>" href="/account/mailboxes">Buzones compartidos</a></li>
               <% } %>

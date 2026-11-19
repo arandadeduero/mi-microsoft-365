@@ -1,14 +1,30 @@
 /**
  * Microsoft Graph API Service
- * 
- * This service handles all Microsoft Graph API calls to retrieve user data.
- * Each function makes an authenticated request to a specific Graph endpoint.
+ *
+ * Handles all Microsoft Graph API calls with consistent auth headers,
+ * timeouts, pagination bounds, 429 retry for idempotent reads, and
+ * low-churn TTL caches (service principals, meeting rooms).
  */
 
 const axios = require('axios');
 const graphConfig = require('../config/graphConfig');
+const { mapWithConcurrency, createTtlCache } = require('./asyncUtils');
+const { compareEs } = require('./formatters');
 
 const GRAPH_API_BASE = 'https://graph.microsoft.com/v1.0';
+const DEFAULT_TIMEOUT_MS = 15 * 1000;
+const LARGE_TIMEOUT_MS = 30 * 1000;
+const MAX_PAGES = 100;
+const MAX_429_RETRIES = 2;
+const MAX_RETRY_WAIT_MS = 5 * 1000;
+
+const servicePrincipalCache = createTtlCache({ ttlMs: 60 * 60 * 1000, maxSize: 500 });
+const roomsCache = createTtlCache({ ttlMs: 5 * 60 * 1000, maxSize: 1 });
+
+function resetGraphCaches() {
+  servicePrincipalCache.clear();
+  roomsCache.clear();
+}
 
 /**
  * Build the error thrown to callers, keeping the HTTP status Graph answered
@@ -23,20 +39,69 @@ function graphError(message, error) {
   return err;
 }
 
+function retryAfterMs(error, attempt) {
+  const raw = error.response?.headers?.['retry-after'] ?? error.response?.headers?.['Retry-After'];
+  const seconds = raw != null ? Number(raw) : Number.NaN;
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return seconds * 1000;
+  }
+  return 250 * (attempt + 1);
+}
+
+const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
+ * Send one authenticated request to Microsoft Graph with a timeout and
+ * bounded Retry-After handling for throttled GETs.
+ */
+async function graphRequest(method, url, accessToken, { data, params, headers, responseType, timeout = DEFAULT_TIMEOUT_MS } = {}) {
+  const config = {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      ...headers,
+    },
+    timeout,
+  };
+  if (params) config.params = params;
+  if (responseType) config.responseType = responseType;
+
+  const canRetry = method === 'get';
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      if (method === 'get' || method === 'delete') {
+        return await axios[method](url, config);
+      }
+      return await axios[method](url, data, config);
+    } catch (error) {
+      if (canRetry && error.response?.status === 429 && attempt < MAX_429_RETRIES) {
+        const delayMs = retryAfterMs(error, attempt);
+        if (delayMs <= MAX_RETRY_WAIT_MS) {
+          if (delayMs > 0) await wait(delayMs);
+          continue;
+        }
+      }
+      throw error;
+    }
+  }
+}
+
 /**
  * Read a Graph collection to the end, following @odata.nextLink
  * @param {string} url - Collection endpoint
- * @param {Object} config - axios config for the first request
+ * @param {string} accessToken - Valid access token
+ * @param {Object} [opts] - params, headers, timeout, maxPages
  * @returns {Promise<Array>} Items of every page
  */
-async function getAllPages(url, config) {
-  let response = await axios.get(url, config);
+async function getAllPages(url, accessToken, { params, headers, timeout = DEFAULT_TIMEOUT_MS, maxPages = MAX_PAGES } = {}) {
+  let response = await graphRequest('get', url, accessToken, { params, headers, timeout });
   const items = [...(response.data.value || [])];
+  let pages = 1;
 
-  while (response.data['@odata.nextLink']) {
-    // The next link already carries the query, so only the headers are sent again
-    response = await axios.get(response.data['@odata.nextLink'], { headers: config.headers });
+  while (response.data['@odata.nextLink'] && pages < maxPages) {
+    // The next link already carries the query, so only headers and timeout are sent again
+    response = await graphRequest('get', response.data['@odata.nextLink'], accessToken, { headers, timeout });
     items.push(...(response.data.value || []));
+    pages += 1;
   }
 
   return items;
@@ -49,11 +114,7 @@ async function getAllPages(url, config) {
  */
 async function getUserProfile(accessToken) {
   try {
-    const response = await axios.get(graphConfig.userProfile.endpoint, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    });
+    const response = await graphRequest('get', graphConfig.userProfile.endpoint, accessToken);
     return response.data;
   } catch (error) {
     console.error('Error fetching user profile:', error.response?.data || error.message);
@@ -72,9 +133,8 @@ const DIRECTORY_USER_FIELDS = 'id,displayName,givenName,surname,mail,jobTitle,de
  */
 async function getUserById(accessToken, userId) {
   try {
-    const response = await axios.get(`${GRAPH_API_BASE}/users/${encodeURIComponent(userId)}`, {
+    const response = await graphRequest('get', `${GRAPH_API_BASE}/users/${encodeURIComponent(userId)}`, accessToken, {
       params: { $select: DIRECTORY_USER_FIELDS },
-      headers: { Authorization: `Bearer ${accessToken}` },
     });
     return response.data;
   } catch (error) {
@@ -91,9 +151,8 @@ async function getUserById(accessToken, userId) {
  */
 async function getDirectReports(accessToken) {
   try {
-    return await getAllPages(`${GRAPH_API_BASE}/me/directReports/microsoft.graph.user`, {
-      params: { $select: DIRECTORY_USER_FIELDS },
-      headers: { Authorization: `Bearer ${accessToken}` },
+    return await getAllPages(`${GRAPH_API_BASE}/me/directReports/microsoft.graph.user`, accessToken, {
+      params: { $select: DIRECTORY_USER_FIELDS, $top: 999 },
     });
   } catch (error) {
     console.error('Error fetching direct reports:', error.response?.data || error.message);
@@ -108,9 +167,7 @@ async function getDirectReports(accessToken) {
  */
 async function getSubscribedSkus(accessToken) {
   try {
-    return await getAllPages(`${GRAPH_API_BASE}/subscribedSkus`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    return await getAllPages(`${GRAPH_API_BASE}/subscribedSkus`, accessToken);
   } catch (error) {
     console.error('Error fetching subscribed SKUs:', error.response?.data || error.message);
     return null;
@@ -127,18 +184,23 @@ const REVIEW_FIELDS = 'id,displayName,userPrincipalName,accountEnabled,userType,
  *   their last sign-in could be read and, if not, Graph's error code; null when nothing could be read
  */
 async function getUsersForReview(appToken) {
-  const headers = { Authorization: `Bearer ${appToken}` };
   let signInsError = null;
   try {
     // Graph serves at most 500 users per page when signInActivity is selected
-    const users = await getAllPages(`${GRAPH_API_BASE}/users`, { params: { $select: `${REVIEW_FIELDS},signInActivity`, $top: 500 }, headers });
+    const users = await getAllPages(`${GRAPH_API_BASE}/users`, appToken, {
+      params: { $select: `${REVIEW_FIELDS},signInActivity`, $top: 500 },
+      timeout: LARGE_TIMEOUT_MS,
+    });
     return { users, signInsKnown: true, signInsError };
   } catch (error) {
     signInsError = error.response?.data?.error?.code || error.message;
     console.error('Error fetching users with sign-in activity, trying without:', error.response?.data || error.message);
   }
   try {
-    const users = await getAllPages(`${GRAPH_API_BASE}/users`, { params: { $select: REVIEW_FIELDS, $top: 999 }, headers });
+    const users = await getAllPages(`${GRAPH_API_BASE}/users`, appToken, {
+      params: { $select: REVIEW_FIELDS, $top: 999 },
+      timeout: LARGE_TIMEOUT_MS,
+    });
     return { users, signInsKnown: false, signInsError };
   } catch (error) {
     console.error('Error fetching users for review:', error.response?.data || error.message);
@@ -154,9 +216,9 @@ async function getUsersForReview(appToken) {
  */
 async function getMfaRegistration(appToken) {
   try {
-    return await getAllPages(`${GRAPH_API_BASE}/reports/authenticationMethods/userRegistrationDetails`, {
+    return await getAllPages(`${GRAPH_API_BASE}/reports/authenticationMethods/userRegistrationDetails`, appToken, {
       params: { $select: 'id,userPrincipalName,isMfaRegistered,isMfaCapable', $top: 999 },
-      headers: { Authorization: `Bearer ${appToken}` },
+      timeout: LARGE_TIMEOUT_MS,
     });
   } catch (error) {
     console.error('Error fetching MFA registration:', error.response?.data || error.message);
@@ -171,14 +233,11 @@ async function getMfaRegistration(appToken) {
  */
 async function getAllUsers(accessToken) {
   try {
-    return await getAllPages(`${GRAPH_API_BASE}/users`, {
+    return await getAllPages(`${GRAPH_API_BASE}/users`, accessToken, {
       params: {
         $select: 'id,displayName,mail,jobTitle,department,officeLocation,businessPhones,mobilePhone',
         $orderby: 'displayName',
         $top: 999, // Largest page Graph allows
-      },
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
       },
     });
   } catch (error) {
@@ -197,18 +256,16 @@ async function sendEmail(accessToken, emailData) {
   try {
     const { to, subject, body, attachments } = emailData;
     const recipients = Array.isArray(to) ? to : [to];
-    
+
     const message = {
       message: {
-        subject: subject,
+        subject,
         body: {
           contentType: 'Text',
           content: body,
         },
         toRecipients: recipients.map(address => ({
-          emailAddress: {
-            address,
-          },
+          emailAddress: { address },
         })),
       },
     };
@@ -216,23 +273,17 @@ async function sendEmail(accessToken, emailData) {
     if (attachments && attachments.length > 0) {
       message.message.hasAttachments = true;
       message.message.attachments = attachments.map(att => ({
-        "@odata.type": "#microsoft.graph.fileAttachment",
+        '@odata.type': '#microsoft.graph.fileAttachment',
         name: att.name,
         contentType: att.contentType,
-        contentBytes: att.contentBytes // base64 encoded
+        contentBytes: att.contentBytes, // base64 encoded
       }));
     }
 
-    await axios.post(
-      'https://graph.microsoft.com/v1.0/me/sendMail',
-      message,
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-      }
-    );
+    await graphRequest('post', `${GRAPH_API_BASE}/me/sendMail`, accessToken, {
+      data: message,
+      headers: { 'Content-Type': 'application/json' },
+    });
 
     console.log(`Email sent successfully to ${recipients.join(', ')}`);
   } catch (error) {
@@ -248,10 +299,7 @@ async function sendEmail(accessToken, emailData) {
  */
 async function getUserPhoto(accessToken) {
   try {
-    const response = await axios.get(graphConfig.userPhoto.endpoint, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
+    const response = await graphRequest('get', graphConfig.userPhoto.endpoint, accessToken, {
       responseType: 'arraybuffer',
     });
     return Buffer.from(response.data, 'binary');
@@ -267,16 +315,33 @@ async function getUserPhoto(accessToken) {
 }
 
 /**
+ * Check whether the signed-in user has a profile photo without downloading its bytes
+ * @param {string} accessToken - Valid access token
+ * @returns {Promise<boolean>}
+ */
+async function hasUserPhoto(accessToken) {
+  try {
+    await graphRequest('get', `${GRAPH_API_BASE}/me/photo`, accessToken, {
+      params: { $select: 'id' },
+    });
+    return true;
+  } catch (error) {
+    if (error.response?.status !== 404) {
+      console.error('Error checking user photo:', error.response?.data || error.message);
+    }
+    return false;
+  }
+}
+
+/**
  * Get user's group memberships
  * @param {string} accessToken - Valid access token for Microsoft Graph
  * @returns {Promise<Array>} Array of groups the user belongs to
  */
 async function getUserGroups(accessToken) {
   try {
-    return await getAllPages(graphConfig.groupMemberships.endpoint, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
+    return await getAllPages(graphConfig.groupMemberships.endpoint, accessToken, {
+      params: { $select: 'id,displayName', $top: 999 },
     });
   } catch (error) {
     console.error('Error fetching user groups:', error.response?.data || error.message);
@@ -292,11 +357,7 @@ async function getUserGroups(accessToken) {
  */
 async function getUserManager(accessToken) {
   try {
-    const response = await axios.get(graphConfig.manager.endpoint, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    });
+    const response = await graphRequest('get', graphConfig.manager.endpoint, accessToken);
     return response.data;
   } catch (error) {
     // 404 means user has no manager assigned - this is normal
@@ -316,13 +377,11 @@ async function getUserManager(accessToken) {
  */
 async function getAllTenantGroups(accessToken) {
   try {
-    return await getAllPages(`${GRAPH_API_BASE}/groups`, {
+    return await getAllPages(`${GRAPH_API_BASE}/groups`, accessToken, {
       params: {
         $select: 'id,displayName,description,mail,mailEnabled,securityEnabled,groupTypes',
         $orderby: 'displayName',
-      },
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
+        $top: 999,
       },
     });
   } catch (error) {
@@ -343,10 +402,7 @@ async function getGroupsWithMembership(accessToken) {
       getUserGroups(accessToken),
     ]);
 
-    // Create a Set of user's group IDs for fast lookup
     const userGroupIds = new Set(userGroups.map(g => g.id));
-
-    // Add membership status to each group
     const groupsWithStatus = allGroups.map(group => ({
       ...group,
       isMember: userGroupIds.has(group.id),
@@ -368,17 +424,20 @@ async function getGroupsWithMembership(accessToken) {
  * Get the owners of a group
  * @param {string} accessToken - Valid access token
  * @param {string} groupId - Group ID
+ * @param {Object} [options] - Optional { top } to cap the page when only counting (e.g. top: 2)
  * @returns {Promise<Array>} Owners, or [] if the group has none or they cannot be read
  */
-async function getGroupOwners(accessToken, groupId) {
+async function getGroupOwners(accessToken, groupId, { top } = {}) {
+  const url = `${GRAPH_API_BASE}/groups/${encodeURIComponent(groupId)}/owners`;
   try {
-    return await getAllPages(`${GRAPH_API_BASE}/groups/${encodeURIComponent(groupId)}/owners`, {
-      params: {
-        $select: 'id,displayName,mail,userPrincipalName',
-      },
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
+    if (top) {
+      const response = await graphRequest('get', url, accessToken, {
+        params: { $select: 'id', $top: top },
+      });
+      return response.data.value || [];
+    }
+    return await getAllPages(url, accessToken, {
+      params: { $select: 'id,displayName,mail,userPrincipalName', $top: 999 },
     });
   } catch (error) {
     console.error(`Error fetching owners of group ${groupId}:`, error.response?.data || error.message);
@@ -394,12 +453,10 @@ async function getGroupOwners(accessToken, groupId) {
  */
 async function getOwnedGroups(accessToken) {
   try {
-    return await getAllPages(`${GRAPH_API_BASE}/me/ownedObjects/microsoft.graph.group`, {
+    return await getAllPages(`${GRAPH_API_BASE}/me/ownedObjects/microsoft.graph.group`, accessToken, {
       params: {
         $select: 'id,displayName,description,mail,mailEnabled,securityEnabled,groupTypes',
-      },
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
+        $top: 999,
       },
     });
   } catch (error) {
@@ -417,16 +474,10 @@ async function getOwnedGroups(accessToken) {
  */
 async function addGroupMember(accessToken, groupId, userId) {
   try {
-    await axios.post(
-      `${GRAPH_API_BASE}/groups/${encodeURIComponent(groupId)}/members/$ref`,
-      { '@odata.id': `${GRAPH_API_BASE}/directoryObjects/${userId}` },
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-      }
-    );
+    await graphRequest('post', `${GRAPH_API_BASE}/groups/${encodeURIComponent(groupId)}/members/$ref`, accessToken, {
+      data: { '@odata.id': `${GRAPH_API_BASE}/directoryObjects/${encodeURIComponent(userId)}` },
+      headers: { 'Content-Type': 'application/json' },
+    });
   } catch (error) {
     const message = error.response?.data?.error?.message || '';
     if (error.response?.status === 400 && message.includes('already exist')) {
@@ -445,13 +496,8 @@ async function addGroupMember(accessToken, groupId, userId) {
  */
 async function getGroupMembers(accessToken, groupId) {
   try {
-    return await getAllPages(`${GRAPH_API_BASE}/groups/${encodeURIComponent(groupId)}/members/microsoft.graph.user`, {
-      params: {
-        $select: 'id,displayName,mail,userPrincipalName,userType',
-      },
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
+    return await getAllPages(`${GRAPH_API_BASE}/groups/${encodeURIComponent(groupId)}/members/microsoft.graph.user`, accessToken, {
+      params: { $select: 'id,displayName,mail,userPrincipalName,userType', $top: 999 },
     });
   } catch (error) {
     console.error(`Error fetching members of group ${groupId}:`, error.response?.data || error.message);
@@ -468,14 +514,7 @@ async function getGroupMembers(accessToken, groupId) {
  */
 async function removeGroupMember(accessToken, groupId, userId) {
   try {
-    await axios.delete(
-      `${GRAPH_API_BASE}/groups/${encodeURIComponent(groupId)}/members/${encodeURIComponent(userId)}/$ref`,
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      }
-    );
+    await graphRequest('delete', `${GRAPH_API_BASE}/groups/${encodeURIComponent(groupId)}/members/${encodeURIComponent(userId)}/$ref`, accessToken);
   } catch (error) {
     if (error.response?.status === 404) {
       return;
@@ -493,11 +532,9 @@ async function removeGroupMember(accessToken, groupId, userId) {
  */
 async function revokeSignInSessions(accessToken) {
   try {
-    await axios.post(`${GRAPH_API_BASE}/me/revokeSignInSessions`, {}, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
+    await graphRequest('post', `${GRAPH_API_BASE}/me/revokeSignInSessions`, accessToken, {
+      data: {},
+      headers: { 'Content-Type': 'application/json' },
     });
   } catch (error) {
     console.error('Error revoking sign-in sessions:', error.response?.data || error.message);
@@ -512,11 +549,7 @@ async function revokeSignInSessions(accessToken) {
  */
 async function getCalendarPermissions(accessToken) {
   try {
-    return await getAllPages(`${GRAPH_API_BASE}/me/calendar/calendarPermissions`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    });
+    return await getAllPages(`${GRAPH_API_BASE}/me/calendar/calendarPermissions`, accessToken);
   } catch (error) {
     console.error('Error fetching calendar permissions:', error.response?.data || error.message);
     // null and not []: "could not check" must not look like "shared with nobody"
@@ -533,11 +566,8 @@ async function getCalendarPermissions(accessToken) {
  */
 async function shareCalendar(accessToken, address, role) {
   try {
-    const response = await axios.post(`${GRAPH_API_BASE}/me/calendar/calendarPermissions`, {
-      emailAddress: { address },
-      role,
-    }, {
-      headers: { Authorization: `Bearer ${accessToken}` },
+    const response = await graphRequest('post', `${GRAPH_API_BASE}/me/calendar/calendarPermissions`, accessToken, {
+      data: { emailAddress: { address }, role },
     });
     return response.data;
   } catch (error) {
@@ -554,9 +584,7 @@ async function shareCalendar(accessToken, address, role) {
  */
 async function removeCalendarPermission(accessToken, permissionId) {
   try {
-    await axios.delete(`${GRAPH_API_BASE}/me/calendar/calendarPermissions/${encodeURIComponent(permissionId)}`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    await graphRequest('delete', `${GRAPH_API_BASE}/me/calendar/calendarPermissions/${encodeURIComponent(permissionId)}`, accessToken);
   } catch (error) {
     console.error('Error removing calendar permission:', error.response?.data || error.message);
     throw graphError('Failed to remove calendar permission', error);
@@ -574,16 +602,17 @@ const PRESENCES_PER_REQUEST = 650;
  */
 async function getPresences(accessToken, userIds) {
   try {
-    const all = [];
+    const chunks = [];
     for (let i = 0; i < userIds.length; i += PRESENCES_PER_REQUEST) {
-      const response = await axios.post(`${GRAPH_API_BASE}/communications/getPresencesByUserId`, {
-        ids: userIds.slice(i, i + PRESENCES_PER_REQUEST),
-      }, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      all.push(...(response.data.value || []));
+      chunks.push(userIds.slice(i, i + PRESENCES_PER_REQUEST));
     }
-    return all;
+    const pages = await mapWithConcurrency(chunks, 4, async (ids) => {
+      const response = await graphRequest('post', `${GRAPH_API_BASE}/communications/getPresencesByUserId`, accessToken, {
+        data: { ids },
+      });
+      return response.data.value || [];
+    });
+    return pages.flat();
   } catch (error) {
     console.error('Error fetching presences:', error.response?.data || error.message);
     // null, not []: "could not check" must not look like "everybody offline"
@@ -599,8 +628,8 @@ async function getPresences(accessToken, userIds) {
  */
 async function getMyAppGrants(accessToken) {
   try {
-    return await getAllPages(`${GRAPH_API_BASE}/me/oauth2PermissionGrants`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
+    return await getAllPages(`${GRAPH_API_BASE}/me/oauth2PermissionGrants`, accessToken, {
+      params: { $top: 999 },
     });
   } catch (error) {
     console.error('Error fetching app grants:', error.response?.data || error.message);
@@ -609,22 +638,24 @@ async function getMyAppGrants(accessToken) {
 }
 
 /**
- * An application of the directory, by the id of its service principal
+ * An application of the directory, by the id of its service principal.
+ * Tenant-wide and low-churn, so successful lookups are cached for 1 hour.
  * @param {string} accessToken - Valid access token
  * @param {string} id - Service principal id, already checked for its format
  * @returns {Promise<Object|null>} Name and publisher, or null when it cannot be read
  */
 async function getServicePrincipal(accessToken, id) {
-  try {
-    const response = await axios.get(`${GRAPH_API_BASE}/servicePrincipals/${encodeURIComponent(id)}`, {
-      params: { $select: 'id,appId,displayName,publisherName,verifiedPublisher,homepage' },
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    return response.data;
-  } catch (error) {
-    console.error(`Error fetching service principal ${id}:`, error.response?.data || error.message);
-    return null;
-  }
+  return servicePrincipalCache.get(id, async () => {
+    try {
+      const response = await graphRequest('get', `${GRAPH_API_BASE}/servicePrincipals/${encodeURIComponent(id)}`, accessToken, {
+        params: { $select: 'id,appId,displayName,publisherName,verifiedPublisher,homepage' },
+      });
+      return response.data;
+    } catch (error) {
+      console.error(`Error fetching service principal ${id}:`, error.response?.data || error.message);
+      return null;
+    }
+  });
 }
 
 // Pages of the drive listing read at most, so a huge OneDrive does not hang the page
@@ -637,17 +668,18 @@ const DRIVE_PAGES_MAX = 25;
  */
 async function getSharedDriveItems(accessToken) {
   try {
-    const headers = { Authorization: `Bearer ${accessToken}` };
-    let response = await axios.get(`${GRAPH_API_BASE}/me/drive/root/delta`, {
+    let response = await graphRequest('get', `${GRAPH_API_BASE}/me/drive/root/delta`, accessToken, {
       params: { $select: 'id,name,webUrl,shared,file,folder,deleted,parentReference', $top: 1000 },
-      headers,
+      timeout: LARGE_TIMEOUT_MS,
     });
     const items = [];
     let pages = 1;
     const keep = (page) => items.push(...(page.value || []).filter(item => item.shared && !item.deleted));
     keep(response.data);
     while (response.data['@odata.nextLink'] && pages < DRIVE_PAGES_MAX) {
-      response = await axios.get(response.data['@odata.nextLink'], { headers });
+      response = await graphRequest('get', response.data['@odata.nextLink'], accessToken, {
+        timeout: LARGE_TIMEOUT_MS,
+      });
       keep(response.data);
       pages += 1;
     }
@@ -666,9 +698,7 @@ async function getSharedDriveItems(accessToken) {
  */
 async function getDriveItemPermissions(accessToken, itemId) {
   try {
-    return await getAllPages(`${GRAPH_API_BASE}/me/drive/items/${encodeURIComponent(itemId)}/permissions`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    return await getAllPages(`${GRAPH_API_BASE}/me/drive/items/${encodeURIComponent(itemId)}/permissions`, accessToken);
   } catch (error) {
     console.error(`Error fetching permissions of item ${itemId}:`, error.response?.data || error.message);
     return null;
@@ -684,9 +714,7 @@ async function getDriveItemPermissions(accessToken, itemId) {
  */
 async function removeDriveItemPermission(accessToken, itemId, permissionId) {
   try {
-    await axios.delete(`${GRAPH_API_BASE}/me/drive/items/${encodeURIComponent(itemId)}/permissions/${encodeURIComponent(permissionId)}`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    await graphRequest('delete', `${GRAPH_API_BASE}/me/drive/items/${encodeURIComponent(itemId)}/permissions/${encodeURIComponent(permissionId)}`, accessToken);
   } catch (error) {
     console.error(`Error removing permission ${permissionId} of item ${itemId}:`, error.response?.data || error.message);
     throw graphError('Failed to remove sharing', error);
@@ -701,13 +729,8 @@ async function removeDriveItemPermission(accessToken, itemId, permissionId) {
  */
 async function canOpenMailbox(accessToken, address) {
   try {
-    await axios.get(`${GRAPH_API_BASE}/users/${encodeURIComponent(address)}/mailFolders/inbox`, {
-      params: {
-        $select: 'id',
-      },
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
+    await graphRequest('get', `${GRAPH_API_BASE}/users/${encodeURIComponent(address)}/mailFolders/inbox`, accessToken, {
+      params: { $select: 'id' },
     });
     return true;
   } catch (error) {
@@ -721,24 +744,21 @@ async function canOpenMailbox(accessToken, address) {
 }
 
 /**
- * Get the meeting rooms of the organization
+ * Get the meeting rooms of the organization (cached for 5 minutes)
  * @param {string} accessToken - Valid access token
  * @returns {Promise<Array|null>} Rooms, or null if they cannot be read
  */
 async function getRooms(accessToken) {
-  try {
-    return await getAllPages(`${GRAPH_API_BASE}/places/microsoft.graph.room`, {
-      params: {
-        $top: 100,
-      },
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    });
-  } catch (error) {
-    console.error('Error fetching rooms:', error.response?.data || error.message);
-    return null;
-  }
+  return roomsCache.get('rooms', async () => {
+    try {
+      return await getAllPages(`${GRAPH_API_BASE}/places/microsoft.graph.room`, accessToken, {
+        params: { $top: 100 },
+      });
+    } catch (error) {
+      console.error('Error fetching rooms:', error.response?.data || error.message);
+      return null;
+    }
+  });
 }
 
 // Mailboxes Graph accepts in one getSchedule request
@@ -755,26 +775,23 @@ const SCHEDULES_PER_REQUEST = 20;
  */
 async function getSchedules(accessToken, addresses, start, end, timeZone) {
   try {
-    const schedules = [];
+    const chunks = [];
     for (let index = 0; index < addresses.length; index += SCHEDULES_PER_REQUEST) {
-      const response = await axios.post(
-        `${GRAPH_API_BASE}/me/calendar/getSchedule`,
-        {
-          schedules: addresses.slice(index, index + SCHEDULES_PER_REQUEST),
+      chunks.push(addresses.slice(index, index + SCHEDULES_PER_REQUEST));
+    }
+    const pages = await mapWithConcurrency(chunks, 4, async (schedules) => {
+      const response = await graphRequest('post', `${GRAPH_API_BASE}/me/calendar/getSchedule`, accessToken, {
+        data: {
+          schedules,
           startTime: { dateTime: start, timeZone },
           endTime: { dateTime: end, timeZone },
           availabilityViewInterval: 15,
         },
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-      schedules.push(...(response.data.value || []));
-    }
-    return schedules;
+        headers: { 'Content-Type': 'application/json' },
+      });
+      return response.data.value || [];
+    });
+    return pages.flat();
   } catch (error) {
     console.error('Error fetching schedules:', error.response?.data || error.message);
     throw graphError('Failed to fetch schedules', error);
@@ -792,7 +809,7 @@ async function getSchedules(accessToken, addresses, start, end, timeZone) {
  */
 async function getRoomEvents(appToken, address, start, end, timeZone) {
   try {
-    return await getAllPages(`${GRAPH_API_BASE}/users/${encodeURIComponent(address)}/calendarView`, {
+    return await getAllPages(`${GRAPH_API_BASE}/users/${encodeURIComponent(address)}/calendarView`, appToken, {
       params: {
         startDateTime: start,
         endDateTime: end,
@@ -800,10 +817,7 @@ async function getRoomEvents(appToken, address, start, end, timeZone) {
         $orderby: 'start/dateTime',
         $top: 100,
       },
-      headers: {
-        Authorization: `Bearer ${appToken}`,
-        Prefer: `outlook.timezone="${timeZone}"`,
-      },
+      headers: { Prefer: `outlook.timezone="${timeZone}"` },
     });
   } catch (error) {
     console.error('Error fetching room events:', error.response?.data || error.message);
@@ -818,14 +832,8 @@ async function getRoomEvents(appToken, address, start, end, timeZone) {
  */
 async function getMyCalendars(accessToken) {
   try {
-    return await getAllPages(`${GRAPH_API_BASE}/me/calendars`, {
-      params: {
-        $select: 'id,name,canEdit',
-        $top: 100,
-      },
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
+    return await getAllPages(`${GRAPH_API_BASE}/me/calendars`, accessToken, {
+      params: { $select: 'id,name,canEdit,canShare,canViewPrivateItems,isDefaultCalendar,owner', $top: 100 },
     });
   } catch (error) {
     console.error('Error fetching calendars:', error.response?.data || error.message);
@@ -841,16 +849,15 @@ async function getMyCalendars(accessToken) {
  */
 async function getListMembers(accessToken, address) {
   try {
-    const headers = { Authorization: `Bearer ${accessToken}` };
-    const [group] = await getAllPages(`${GRAPH_API_BASE}/groups`, {
-      params: { $filter: `mail eq '${address.replace(/'/g, "''")}'`, $select: 'id' },
-      headers,
+    const response = await graphRequest('get', `${GRAPH_API_BASE}/groups`, accessToken, {
+      params: { $filter: `mail eq '${address.replace(/'/g, "''")}'`, $select: 'id', $top: 1 },
     });
+    const [group] = response.data.value || [];
     if (!group) return null;
-    return await getAllPages(`${GRAPH_API_BASE}/groups/${encodeURIComponent(group.id)}/transitiveMembers/microsoft.graph.user`, {
+    return await getAllPages(`${GRAPH_API_BASE}/groups/${encodeURIComponent(group.id)}/transitiveMembers/microsoft.graph.user`, accessToken, {
       // Graph only casts transitive members as an advanced query
       params: { $select: 'id,displayName,mail', $top: 999, $count: true },
-      headers: { ...headers, ConsistencyLevel: 'eventual' },
+      headers: { ConsistencyLevel: 'eventual' },
     });
   } catch (error) {
     console.error(`Error fetching members of ${address}:`, error.response?.data || error.message);
@@ -867,11 +874,9 @@ async function getListMembers(accessToken, address) {
  */
 async function createCalendarEvent(accessToken, calendarId, event) {
   try {
-    const response = await axios.post(`${GRAPH_API_BASE}/me/calendars/${encodeURIComponent(calendarId)}/events`, event, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
+    const response = await graphRequest('post', `${GRAPH_API_BASE}/me/calendars/${encodeURIComponent(calendarId)}/events`, accessToken, {
+      data: event,
+      headers: { 'Content-Type': 'application/json' },
     });
     return response.data;
   } catch (error) {
@@ -887,11 +892,7 @@ async function createCalendarEvent(accessToken, calendarId, event) {
  */
 async function getAuthenticationMethods(accessToken) {
   try {
-    return await getAllPages(`${GRAPH_API_BASE}/me/authentication/methods`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    });
+    return await getAllPages(`${GRAPH_API_BASE}/me/authentication/methods`, accessToken);
   } catch (error) {
     console.error('Error fetching authentication methods:', error.response?.data || error.message);
     // null and not []: "could not check" must not look like "has none"
@@ -906,17 +907,15 @@ async function getAuthenticationMethods(accessToken) {
  */
 async function getUserDevices(accessToken) {
   try {
-    const config = {
+    const opts = {
       params: {
         $select: 'id,displayName,operatingSystem,operatingSystemVersion,approximateLastSignInDateTime',
-      },
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
+        $top: 999,
       },
     };
     const [registered, owned] = await Promise.all([
-      getAllPages(`${GRAPH_API_BASE}/me/registeredDevices/microsoft.graph.device`, config),
-      getAllPages(`${GRAPH_API_BASE}/me/ownedDevices/microsoft.graph.device`, config),
+      getAllPages(`${GRAPH_API_BASE}/me/registeredDevices/microsoft.graph.device`, accessToken, opts),
+      getAllPages(`${GRAPH_API_BASE}/me/ownedDevices/microsoft.graph.device`, accessToken, opts),
     ]);
 
     // Most devices appear in both lists
@@ -935,7 +934,6 @@ async function getUserDevices(accessToken) {
  */
 async function getAllUserData(accessToken) {
   try {
-    // Fetch all data in parallel for better performance
     const [profile, photo, groups, manager] = await Promise.all([
       getUserProfile(accessToken),
       getUserPhoto(accessToken),
@@ -943,12 +941,7 @@ async function getAllUserData(accessToken) {
       getUserManager(accessToken),
     ]);
 
-    return {
-      profile,
-      photo,
-      groups,
-      manager,
-    };
+    return { profile, photo, groups, manager };
   } catch (error) {
     console.error('Error fetching all user data:', error.message);
     throw error;
@@ -963,11 +956,9 @@ async function getAllUserData(accessToken) {
  */
 async function updateUserProfile(accessToken, profileData) {
   try {
-    await axios.patch('https://graph.microsoft.com/v1.0/me', profileData, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
+    await graphRequest('patch', `${GRAPH_API_BASE}/me`, accessToken, {
+      data: profileData,
+      headers: { 'Content-Type': 'application/json' },
     });
   } catch (error) {
     console.error('Error updating user profile:', error.response?.data || error.message);
@@ -984,11 +975,9 @@ async function updateUserProfile(accessToken, profileData) {
  */
 async function updateUserPhoto(accessToken, photo, contentType) {
   try {
-    await axios.put(graphConfig.userPhoto.endpoint, photo, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': contentType,
-      },
+    await graphRequest('put', graphConfig.userPhoto.endpoint, accessToken, {
+      data: photo,
+      headers: { 'Content-Type': contentType },
     });
   } catch (error) {
     console.error('Error updating user photo:', error.response?.data || error.message);
@@ -1003,13 +992,8 @@ async function updateUserPhoto(accessToken, photo, contentType) {
  */
 async function getAccountStatus(accessToken) {
   try {
-    const response = await axios.get(graphConfig.userProfile.endpoint, {
-      params: {
-        $select: 'lastPasswordChangeDateTime,otherMails,createdDateTime,mobilePhone,businessPhones',
-      },
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
+    const response = await graphRequest('get', graphConfig.userProfile.endpoint, accessToken, {
+      params: { $select: 'lastPasswordChangeDateTime,otherMails,createdDateTime,mobilePhone,businessPhones' },
     });
     return response.data;
   } catch (error) {
@@ -1025,11 +1009,7 @@ async function getAccountStatus(accessToken) {
  */
 async function getUserLicenses(accessToken) {
   try {
-    return await getAllPages(`${GRAPH_API_BASE}/me/licenseDetails`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    });
+    return await getAllPages(`${GRAPH_API_BASE}/me/licenseDetails`, accessToken);
   } catch (error) {
     console.error('Error fetching user licenses:', error.response?.data || error.message);
     // Return empty array instead of throwing - licenses are optional
@@ -1045,12 +1025,10 @@ async function getUserLicenses(accessToken) {
  */
 async function getMyGroups(accessToken) {
   try {
-    return await getAllPages(`${GRAPH_API_BASE}/me/memberOf/microsoft.graph.group`, {
+    return await getAllPages(`${GRAPH_API_BASE}/me/memberOf/microsoft.graph.group`, accessToken, {
       params: {
         $select: 'id,displayName,description,mail,mailEnabled,securityEnabled,groupTypes,resourceProvisioningOptions',
-      },
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
+        $top: 999,
       },
     });
   } catch (error) {
@@ -1066,11 +1044,7 @@ async function getMyGroups(accessToken) {
  */
 async function getInboxRules(accessToken) {
   try {
-    return await getAllPages(`${GRAPH_API_BASE}/me/mailFolders/inbox/messageRules`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    });
+    return await getAllPages(`${GRAPH_API_BASE}/me/mailFolders/inbox/messageRules`, accessToken);
   } catch (error) {
     console.error('Error fetching inbox rules:', error.response?.data || error.message);
     // null and not []: "could not check" must not look like "has none"
@@ -1085,13 +1059,8 @@ async function getInboxRules(accessToken) {
  */
 async function getDriveQuota(accessToken) {
   try {
-    const response = await axios.get(`${GRAPH_API_BASE}/me/drive`, {
-      params: {
-        $select: 'quota',
-      },
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
+    const response = await graphRequest('get', `${GRAPH_API_BASE}/me/drive`, accessToken, {
+      params: { $select: 'quota' },
     });
     return response.data.quota || null;
   } catch (error) {
@@ -1109,14 +1078,11 @@ async function getDriveQuota(accessToken) {
  */
 async function getRecentSignIns(appToken, userId) {
   try {
-    const response = await axios.get(`${GRAPH_API_BASE}/auditLogs/signIns`, {
+    const response = await graphRequest('get', `${GRAPH_API_BASE}/auditLogs/signIns`, appToken, {
       params: {
         $filter: `userId eq '${userId.replace(/'/g, "''")}'`,
         $orderby: 'createdDateTime desc',
         $top: 25,
-      },
-      headers: {
-        Authorization: `Bearer ${appToken}`,
       },
     });
     return response.data.value || [];
@@ -1133,11 +1099,7 @@ async function getRecentSignIns(appToken, userId) {
  */
 async function getMailboxSettings(accessToken) {
   try {
-    const response = await axios.get(`${GRAPH_API_BASE}/me/mailboxSettings`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    });
+    const response = await graphRequest('get', `${GRAPH_API_BASE}/me/mailboxSettings`, accessToken);
     return response.data;
   } catch (error) {
     console.error('Error fetching mailbox settings:', error.response?.data || error.message);
@@ -1153,11 +1115,9 @@ async function getMailboxSettings(accessToken) {
  */
 async function updateMailboxSettings(accessToken, settings) {
   try {
-    await axios.patch(`${GRAPH_API_BASE}/me/mailboxSettings`, settings, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
+    await graphRequest('patch', `${GRAPH_API_BASE}/me/mailboxSettings`, accessToken, {
+      data: settings,
+      headers: { 'Content-Type': 'application/json' },
     });
   } catch (error) {
     console.error('Error updating mailbox settings:', error.response?.data || error.message);
@@ -1172,13 +1132,8 @@ async function updateMailboxSettings(accessToken, settings) {
  */
 async function getPreferredLanguage(accessToken) {
   try {
-    const response = await axios.get(graphConfig.userProfile.endpoint, {
-      params: {
-        $select: 'preferredLanguage',
-      },
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
+    const response = await graphRequest('get', graphConfig.userProfile.endpoint, accessToken, {
+      params: { $select: 'preferredLanguage' },
     });
     return response.data.preferredLanguage || null;
   } catch (error) {
@@ -1194,11 +1149,7 @@ async function getPreferredLanguage(accessToken) {
  */
 async function getMailboxTimeZone(accessToken) {
   try {
-    const response = await axios.get(`${GRAPH_API_BASE}/me/mailboxSettings/timeZone`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    });
+    const response = await graphRequest('get', `${GRAPH_API_BASE}/me/mailboxSettings/timeZone`, accessToken);
     return response.data.value || 'UTC';
   } catch (error) {
     console.error('Error fetching mailbox time zone:', error.response?.data || error.message);
@@ -1215,11 +1166,8 @@ async function getMailboxTimeZone(accessToken) {
  */
 async function getAutomaticReplies(accessToken, timeZone) {
   try {
-    const response = await axios.get(`${GRAPH_API_BASE}/me/mailboxSettings/automaticRepliesSetting`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        Prefer: `outlook.timezone="${timeZone}"`,
-      },
+    const response = await graphRequest('get', `${GRAPH_API_BASE}/me/mailboxSettings/automaticRepliesSetting`, accessToken, {
+      headers: { Prefer: `outlook.timezone="${timeZone}"` },
     });
     return response.data;
   } catch (error) {
@@ -1236,72 +1184,66 @@ async function getAutomaticReplies(accessToken, timeZone) {
  */
 async function updateAutomaticReplies(accessToken, setting) {
   try {
-    await axios.patch(`${GRAPH_API_BASE}/me/mailboxSettings`, { automaticRepliesSetting: setting }, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-    });
+    await updateMailboxSettings(accessToken, { automaticRepliesSetting: setting });
   } catch (error) {
-    console.error('Error updating automatic replies:', error.response?.data || error.message);
-    throw graphError('Failed to update automatic replies', error);
+    const err = new Error('Failed to update automatic replies');
+    err.graphStatus = error.graphStatus;
+    throw err;
   }
 }
 
 /**
- * Get user extended directory information
+ * Get user extended directory information (alias of getUserProfile)
  * @param {string} accessToken - Valid access token
  * @returns {Promise<Object>} User extended data
  */
-async function getUserExtendedInfo(accessToken) {
-  try {
-    const response = await axios.get('https://graph.microsoft.com/v1.0/me', {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    });
-    return response.data;
-  } catch (error) {
-    console.error('Error fetching extended user info:', error.response?.data || error.message);
-    throw graphError('Failed to fetch extended user info', error);
-  }
+function getUserExtendedInfo(accessToken) {
+  return getUserProfile(accessToken);
 }
 
 /**
- * Get joined teams and their channels
+ * Get joined teams and their channels (with bounded concurrency)
  * @param {string} accessToken - Valid access token
  * @returns {Promise<Array>} Array of teams with channels
  */
 async function getJoinedTeamsAndChannels(accessToken) {
   try {
-    // 1. Get joined teams
-    const teams = await getAllPages(`${GRAPH_API_BASE}/me/joinedTeams`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
+    const teams = await getAllPages(`${GRAPH_API_BASE}/me/joinedTeams`, accessToken, {
+      params: { $select: 'id,displayName,description' },
     });
 
-    // 2. Get channels for each team
-    const teamsWithChannels = await Promise.all(
-      teams.map(async (team) => {
-        try {
-          const channels = await getAllPages(`${GRAPH_API_BASE}/teams/${team.id}/channels`, {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-            },
-          });
-          return { ...team, channels };
-        } catch (error) {
-          console.error(`Error fetching channels for team ${team.id}:`, error.message);
-          return { ...team, channels: [] };
-        }
-      })
-    );
-
-    return teamsWithChannels;
+    return await mapWithConcurrency(teams, 6, async (team) => {
+      try {
+        const channels = await getAllPages(`${GRAPH_API_BASE}/teams/${encodeURIComponent(team.id)}/channels`, accessToken, {
+          params: { $select: 'id,displayName,description,membershipType,webUrl' },
+        });
+        return { ...team, channels };
+      } catch (error) {
+        console.error(`Error fetching channels for team ${team.id}:`, error.message);
+        return { ...team, channels: [] };
+      }
+    });
   } catch (error) {
     console.error('Error fetching joined teams:', error.response?.data || error.message);
     throw graphError('Failed to fetch teams', error);
+  }
+}
+
+/**
+ * Get administrative directory roles for the user, returning null when Graph fails
+ * so callers can distinguish a failed lookup from "no roles".
+ * @param {string} accessToken - Valid access token
+ * @returns {Promise<Array<string>|null>}
+ */
+async function fetchUserAdminRoles(accessToken) {
+  try {
+    const roles = await getAllPages(`${GRAPH_API_BASE}/me/memberOf/microsoft.graph.directoryRole`, accessToken, {
+      params: { $select: 'displayName' },
+    });
+    return roles.map(role => role.displayName);
+  } catch (error) {
+    console.error('Error fetching admin roles:', error.response?.data || error.message);
+    return null;
   }
 }
 
@@ -1311,19 +1253,7 @@ async function getJoinedTeamsAndChannels(accessToken) {
  * @returns {Promise<Array>} Array of admin role names
  */
 async function getUserAdminRoles(accessToken) {
-  try {
-    const url = 'https://graph.microsoft.com/v1.0/me/memberOf/microsoft.graph.directoryRole';
-    const roles = await getAllPages(url, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    });
-
-    return roles.map(role => role.displayName);
-  } catch (error) {
-    console.error('Error fetching admin roles:', error.response?.data || error.message);
-    return [];
-  }
+  return (await fetchUserAdminRoles(accessToken)) || [];
 }
 
 /**
@@ -1333,20 +1263,18 @@ async function getUserAdminRoles(accessToken) {
  */
 async function getUsersWithManager(accessToken) {
   try {
-    const users = await getAllPages(`${GRAPH_API_BASE}/users`, {
+    const users = await getAllPages(`${GRAPH_API_BASE}/users`, accessToken, {
       params: {
         $select: 'id,displayName,mail,jobTitle,department',
         // One request per page instead of one manager request per user
         $expand: 'manager($select=id)',
-      },
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
+        $top: 999,
       },
     });
 
     return users
       .map(({ manager, ...user }) => ({ ...user, managerId: manager ? manager.id : null }))
-      .sort((a, b) => (a.displayName || '').localeCompare(b.displayName || ''));
+      .sort((a, b) => compareEs(a.displayName, b.displayName));
   } catch (error) {
     console.error('Error fetching users with manager:', error.response?.data || error.message);
     throw graphError('Failed to fetch users', error);
@@ -1366,13 +1294,10 @@ async function findUserByEmail(accessToken, email) {
   try {
     // Single quotes are doubled inside an OData string literal
     const literal = email.replace(/'/g, "''");
-    const response = await axios.get(`${GRAPH_API_BASE}/users`, {
+    const response = await graphRequest('get', `${GRAPH_API_BASE}/users`, accessToken, {
       params: {
         $filter: `mail eq '${literal}' or userPrincipalName eq '${literal}'`,
         $select: RESET_USER_FIELDS,
-      },
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
       },
     });
     return (response.data.value || [])[0] || null;
@@ -1390,13 +1315,8 @@ async function findUserByEmail(accessToken, email) {
  */
 async function getUserForReset(accessToken, userId) {
   try {
-    const response = await axios.get(`${GRAPH_API_BASE}/users/${encodeURIComponent(userId)}`, {
-      params: {
-        $select: RESET_USER_FIELDS,
-      },
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
+    const response = await graphRequest('get', `${GRAPH_API_BASE}/users/${encodeURIComponent(userId)}`, accessToken, {
+      params: { $select: RESET_USER_FIELDS },
     });
     return response.data;
   } catch (error) {
@@ -1421,11 +1341,9 @@ async function resetUserPassword(accessToken, userId, newPassword) {
         forceChangePasswordNextSignIn: false,
       },
     };
-    await axios.patch(`https://graph.microsoft.com/v1.0/users/${userId}`, passwordProfile, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
+    await graphRequest('patch', `${GRAPH_API_BASE}/users/${encodeURIComponent(userId)}`, accessToken, {
+      data: passwordProfile,
+      headers: { 'Content-Type': 'application/json' },
     });
     console.log(`Password reset successfully for user ${userId}`);
   } catch (error) {
@@ -1435,8 +1353,10 @@ async function resetUserPassword(accessToken, userId, newPassword) {
 }
 
 module.exports = {
+  resetGraphCaches,
   getUserProfile,
   getUserPhoto,
+  hasUserPhoto,
   getUserGroups,
   getUserManager,
   getAllUserData,
@@ -1492,6 +1412,7 @@ module.exports = {
   updateAutomaticReplies,
   getUserExtendedInfo,
   getJoinedTeamsAndChannels,
+  fetchUserAdminRoles,
   getUserAdminRoles,
   resetUserPassword,
 };

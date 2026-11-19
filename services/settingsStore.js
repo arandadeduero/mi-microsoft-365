@@ -64,7 +64,8 @@ function saveSettings({ blogUsers, sharedMailboxes }) {
   const tmp = `${file}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify({ blogUsers, sharedMailboxes, updatedAt: new Date().toISOString() }, null, 2));
   fs.renameSync(tmp, file);
-  applySettings();
+  permissions['/blog'] = [...blogUsers];
+  appConfig.SHARED_MAILBOXES = [...sharedMailboxes];
 }
 
 module.exports = { currentSettings, applySettings, saveSettings };

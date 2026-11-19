@@ -2,6 +2,8 @@
  * What administrators should look at among the accounts. Pure functions.
  */
 
+const { compareEs } = require('./formatters');
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 const IDLE_DAYS = 90;
 
@@ -21,37 +23,59 @@ const daysSince = (date, now) => Math.floor((now - new Date(date).getTime()) / D
  * @returns {Object} Lists of accounts, each with why it is there
  */
 function reviewAccounts(users, { signInsKnown = false, mfa = null, passwordMaxAgeDays = null, now = Date.now() } = {}) {
-  const members = users.filter(user => user.userType !== 'Guest');
-  const licensed = (user) => (user.assignedLicenses || []).length > 0;
-  const mfaById = new Map((mfa || []).map(entry => [entry.id, entry]));
+  const mfaById = mfa ? new Map(mfa.map(entry => [entry.id, entry])) : null;
   const person = (user, note) => ({ id: user.id, name: user.displayName || user.userPrincipalName, username: user.userPrincipalName, note });
 
-  const idle = signInsKnown
-    ? members.filter(user => user.accountEnabled && licensed(user)).map((user) => {
+  const idle = signInsKnown ? [] : null;
+  const expiredPassword = passwordMaxAgeDays ? [] : null;
+  const disabledWithLicense = [];
+  const enabledWithoutLicense = [];
+  const withoutMfa = mfa ? [] : null;
+  let total = 0;
+
+  for (const user of users) {
+    if (user.userType === 'Guest') continue;
+    total += 1;
+    const isLicensed = (user.assignedLicenses || []).length > 0;
+
+    if (!user.accountEnabled) {
+      if (isLicensed) disabledWithLicense.push(person(user, 'Cuenta deshabilitada con licencia asignada'));
+      continue;
+    }
+
+    if (!isLicensed) {
+      enabledWithoutLicense.push(person(user, 'Sin licencia'));
+      continue;
+    }
+
+    if (idle) {
       const last = lastSignIn(user);
-      if (!last) return daysSince(user.createdDateTime || now, now) > IDLE_DAYS ? person(user, 'Nunca ha iniciado sesión') : null;
-      const days = daysSince(last, now);
-      return days > IDLE_DAYS ? person(user, `Último inicio de sesión hace ${days} días`) : null;
-    }).filter(Boolean)
-    : null;
+      if (!last) {
+        if (daysSince(user.createdDateTime || now, now) > IDLE_DAYS) {
+          idle.push(person(user, 'Nunca ha iniciado sesión'));
+        }
+      } else {
+        const days = daysSince(last, now);
+        if (days > IDLE_DAYS) idle.push(person(user, `Último inicio de sesión hace ${days} días`));
+      }
+    }
 
-  const expiredPassword = passwordMaxAgeDays
-    ? members.filter(user => user.accountEnabled && licensed(user) && user.lastPasswordChangeDateTime && daysSince(user.lastPasswordChangeDateTime, now) > passwordMaxAgeDays)
-      .map(user => person(user, `Contraseña de hace ${daysSince(user.lastPasswordChangeDateTime, now)} días`))
-    : null;
+    if (expiredPassword && user.lastPasswordChangeDateTime) {
+      const days = daysSince(user.lastPasswordChangeDateTime, now);
+      if (days > passwordMaxAgeDays) {
+        expiredPassword.push(person(user, `Contraseña de hace ${days} días`));
+      }
+    }
 
-  const disabledWithLicense = members.filter(user => !user.accountEnabled && licensed(user)).map(user => person(user, 'Cuenta deshabilitada con licencia asignada'));
-  const enabledWithoutLicense = members.filter(user => user.accountEnabled && !licensed(user)).map(user => person(user, 'Sin licencia'));
+    if (withoutMfa && mfaById.has(user.id) && mfaById.get(user.id).isMfaRegistered === false) {
+      withoutMfa.push(person(user, 'Sin segundo factor registrado'));
+    }
+  }
 
-  const withoutMfa = mfa
-    ? members.filter(user => user.accountEnabled && licensed(user) && mfaById.has(user.id) && mfaById.get(user.id).isMfaRegistered === false)
-      .map(user => person(user, 'Sin segundo factor registrado'))
-    : null;
-
-  const sortByName = (list) => list && list.sort((a, b) => a.name.localeCompare(b.name, 'es'));
+  const sortByName = (list) => list && list.sort((a, b) => compareEs(a.name, b.name));
   return {
-    total: members.length,
-    guests: users.length - members.length,
+    total,
+    guests: users.length - total,
     idle: sortByName(idle),
     expiredPassword: sortByName(expiredPassword),
     disabledWithLicense: sortByName(disabledWithLicense),

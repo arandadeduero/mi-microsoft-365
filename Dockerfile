@@ -6,8 +6,10 @@ WORKDIR /usr/src/app
 # Copy package files
 COPY package*.json ./
 
-# Install only production dependencies
-RUN npm ci --only=production
+# Install only production dependencies and drop non-runtime TypeScript types / source maps
+RUN npm ci --omit=dev --no-audit --no-fund \
+  && find node_modules -type d -name dist-types -prune -exec rm -rf {} + \
+  && find node_modules -type f \( -name '*.d.ts' -o -name '*.d.ts.map' -o -name '*.js.map' \) -delete
 
 # Stage 2: Production Runner
 FROM node:25-alpine AS runner

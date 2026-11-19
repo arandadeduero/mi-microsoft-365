@@ -5,10 +5,18 @@
  * If not authenticated, it redirects to the login page.
  */
 
-const { getUserAdminRoles } = require('../services/graphService');
+const { fetchUserAdminRoles } = require('../services/graphService');
 const { needsRenewal, renewSession } = require('../services/tokenService');
 const { auditRequest } = require('../services/auditService');
 const permissions = require('../config/permissions');
+
+// How long a user's admin role lookup is reused on non-admin pages.
+// Requests to /admin/* always verify live against Graph.
+const ADMIN_CACHE_MS = 5 * 60 * 1000;
+
+// In-flight token renewals keyed by sessionID so parallel requests from the
+// same browser share one Entra renewal instead of racing on disk writes.
+const inflightRenewals = new Map();
 
 /**
  * Build the middleware that guards one route with its list in
@@ -26,16 +34,18 @@ function checkPermission(routeKey) {
       return res.status(403).send('Access Denied');
     }
 
-    const [username, domain] = userEmail.split('@');
+    const [rawUser, rawDomain] = userEmail.split('@');
+    const username = (rawUser || '').toLowerCase();
+    const domain = (rawDomain || '').toLowerCase();
 
-    if (domain !== permissions.DOMAIN) {
+    if (domain !== (permissions.DOMAIN || '').toLowerCase()) {
       console.warn(`Access denied: User domain ${domain} does not match required domain ${permissions.DOMAIN}`);
       auditRequest(req, 'permission.denied', { path, method });
       return res.status(403).send('Access Denied');
     }
 
     const allowed = permissions[routeKey];
-    if (!Array.isArray(allowed) || !allowed.includes(username)) {
+    if (!Array.isArray(allowed) || !allowed.some(entry => String(entry).toLowerCase() === username)) {
       console.warn(`Access denied for user ${username} on ${method} ${path.replace(/[\r\n]/g, '')} (${routeKey})`);
       auditRequest(req, 'permission.denied', { path, method });
       return res.status(403).send('Access Denied');
@@ -55,24 +65,68 @@ async function refreshAccessToken(req, res, next) {
     return next();
   }
 
+  const sid = req.sessionID;
   try {
-    await renewSession(req.session);
+    if (sid && inflightRenewals.has(sid)) {
+      const renewed = await inflightRenewals.get(sid);
+      Object.assign(req.session, renewed);
+    } else if (sid) {
+      const pending = renewSession(req.session)
+        .then(() => ({
+          accessToken: req.session.accessToken,
+          account: req.session.account,
+          expiresOn: req.session.expiresOn,
+          tokenCache: req.session.tokenCache,
+        }))
+        .finally(() => {
+          inflightRenewals.delete(sid);
+        });
+      inflightRenewals.set(sid, pending);
+      await pending;
+    } else {
+      await renewSession(req.session);
+    }
     next();
   } catch (error) {
     console.warn('Could not renew the access token, signing the user out:', error.message);
-    req.session.regenerate(() => next());
+    req.session.regenerate((regenErr) => {
+      if (regenErr) console.error('Error regenerating session after renewal failure:', regenErr.message);
+      next();
+    });
   }
 }
 
+function isAdminPath(reqPath) {
+  const normalized = String(reqPath || '').toLowerCase();
+  return normalized === '/admin' || normalized.startsWith('/admin/');
+}
+
 /**
- * Middleware to check if user is an admin
+ * Middleware to check if user is an admin.
+ * Reuses a 5-minute session cache on regular pages, and always verifies live
+ * against Microsoft Graph on /admin/* routes.
  */
 async function checkAdminStatus(req, res, next) {
   if (req.session && req.session.accessToken) {
+    const cached = req.session.adminStatus;
+    const useCache = !isAdminPath(req.path) && cached && Array.isArray(cached.roles) && Date.now() - cached.checkedAt < ADMIN_CACHE_MS;
+
+    if (useCache) {
+      res.locals.isAdmin = cached.roles.length > 0;
+      res.locals.adminRoles = cached.roles;
+      return next();
+    }
+
     try {
-      const adminRoles = await getUserAdminRoles(req.session.accessToken);
-      res.locals.isAdmin = adminRoles.length > 0;
-      res.locals.adminRoles = adminRoles;
+      const adminRoles = await fetchUserAdminRoles(req.session.accessToken);
+      if (adminRoles !== null) {
+        req.session.adminStatus = { roles: adminRoles, checkedAt: Date.now() };
+        res.locals.isAdmin = adminRoles.length > 0;
+        res.locals.adminRoles = adminRoles;
+      } else {
+        res.locals.isAdmin = false;
+        res.locals.adminRoles = [];
+      }
     } catch (error) {
       console.error('Error checking admin status:', error);
       res.locals.isAdmin = false;

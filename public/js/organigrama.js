@@ -12,16 +12,27 @@
   ));
 
   // Ignore case and accents, so "garcia" finds "García"
-  const normalize = (text) => String(text || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const normalize = (text) => String(text || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const nameCollator = new Intl.Collator('es', { sensitivity: 'base' });
 
-  const initials = (name) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0].toUpperCase()).join('');
+  const initialsCache = new Map();
+  const initials = (name) => {
+    if (initialsCache.has(name)) return initialsCache.get(name);
+    const value = name.split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0].toUpperCase()).join('');
+    initialsCache.set(name, value);
+    return value;
+  };
 
   // The same department always gets the same color, so areas can be told apart at a glance
+  const departmentColorCache = new Map();
   const departmentColor = (department) => {
     if (!department) return '#5a6678';
+    if (departmentColorCache.has(department)) return departmentColorCache.get(department);
     let hash = 0;
     for (const char of department) hash = (hash * 31 + char.codePointAt(0)) % 360;
-    return `hsl(${hash} 55% 36%)`;
+    const color = `hsl(${hash} 55% 36%)`;
+    departmentColorCache.set(department, color);
+    return color;
   };
 
   // ------------------------------------------------------------------ chart
@@ -153,20 +164,30 @@
     active = -1;
   };
 
+  const unplacedRows = new Map(
+    unplacedBox
+      ? Array.from(unplacedBox.querySelectorAll('tr[data-person-id]')).map((tr) => [tr.dataset.personId, tr])
+      : []
+  );
+
   const setActive = (index) => {
+    const options = list.querySelectorAll('[role="option"]');
+    if (active >= 0 && options[active]) {
+      options[active].classList.remove('active');
+      options[active].setAttribute('aria-selected', 'false');
+    }
     active = index;
-    list.querySelectorAll('[role="option"]').forEach((option, position) => {
-      option.classList.toggle('active', position === index);
-      option.setAttribute('aria-selected', position === index ? 'true' : 'false');
-      if (position === index) {
-        input.setAttribute('aria-activedescendant', option.id);
-        option.scrollIntoView({ block: 'nearest' });
-      }
-    });
+    const current = options[active];
+    if (current) {
+      current.classList.add('active');
+      current.setAttribute('aria-selected', 'true');
+      input.setAttribute('aria-activedescendant', current.id);
+      current.scrollIntoView({ block: 'nearest' });
+    }
   };
 
   const showUnplaced = (id) => {
-    const row = Array.from(unplacedBox.querySelectorAll('tr[data-person-id]')).find((tr) => tr.dataset.personId === id);
+    const row = unplacedRows.get(id);
     if (!row) return;
     unplacedBox.open = true;
     row.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -197,13 +218,15 @@
     const found = people.filter((entry) => words.every((word) => entry.text.includes(word)));
     // People whose name starts with what was typed go first
     const startsWith = (entry) => (entry.name.startsWith(words[0]) ? 0 : 1);
-    found.sort((a, b) => startsWith(a) - startsWith(b) || a.name.localeCompare(b.name));
+    found.sort((a, b) => startsWith(a) - startsWith(b) || nameCollator.compare(a.name, b.name));
     matches = found.slice(0, MAX_RESULTS).map((entry) => entry.person);
 
+    const fragment = document.createDocumentFragment();
     matches.forEach((person, index) => {
       const option = document.createElement('button');
       option.type = 'button';
       option.id = `orgSearchOption${index}`;
+      option.dataset.matchIndex = String(index);
       option.className = 'list-group-item list-group-item-action';
       option.setAttribute('role', 'option');
       const name = document.createElement('div');
@@ -214,22 +237,34 @@
       detail.textContent = [person.jobTitle, person.department].filter(Boolean).join(' · ')
         || (inChart.has(person.id) ? '' : 'Fuera del organigrama');
       option.append(name, detail);
-      // mousedown, not click: it comes before the input loses the focus
-      option.addEventListener('mousedown', (event) => {
-        event.preventDefault();
-        choose(person);
-      });
-      list.appendChild(option);
+      fragment.appendChild(option);
     });
 
-    if (found.length === 0) list.appendChild(note('Nadie coincide con la búsqueda.'));
-    if (found.length > MAX_RESULTS) list.appendChild(note(`Y ${found.length - MAX_RESULTS} más: escribe algo más para afinar.`));
+    if (found.length === 0) fragment.appendChild(note('Nadie coincide con la búsqueda.'));
+    if (found.length > MAX_RESULTS) fragment.appendChild(note(`Y ${found.length - MAX_RESULTS} más: escribe algo más para afinar.`));
 
+    list.appendChild(fragment);
     list.classList.remove('d-none');
     input.setAttribute('aria-expanded', 'true');
   };
 
-  input.addEventListener('input', search);
+  // mousedown, not click: it comes before the input loses the focus
+  list.addEventListener('mousedown', (event) => {
+    const option = event.target.closest('[data-match-index]');
+    if (!option) return;
+    event.preventDefault();
+    const person = matches[Number(option.dataset.matchIndex)];
+    if (person) choose(person);
+  });
+
+  let searchFrame = null;
+  input.addEventListener('input', () => {
+    if (searchFrame !== null) cancelAnimationFrame(searchFrame);
+    searchFrame = requestAnimationFrame(() => {
+      searchFrame = null;
+      search();
+    });
+  });
   input.addEventListener('focus', () => { if (input.value) search(); });
   input.addEventListener('blur', close);
   input.addEventListener('keydown', (event) => {

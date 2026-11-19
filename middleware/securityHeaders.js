@@ -37,18 +37,22 @@ const CONTENT_SECURITY_POLICY = [
   "object-src 'none'",
 ].join('; ');
 
+const BASE_HEADERS = {
+  'Content-Security-Policy': CONTENT_SECURITY_POLICY,
+  'X-Frame-Options': 'DENY',
+  'X-Content-Type-Options': 'nosniff',
+  'Referrer-Policy': 'same-origin',
+};
+
+const PROD_HEADERS = {
+  ...BASE_HEADERS,
+  'Strict-Transport-Security': 'max-age=31536000',
+};
+
 function securityHeaders(req, res, next) {
-  res.set({
-    'Content-Security-Policy': CONTENT_SECURITY_POLICY,
-    'X-Frame-Options': 'DENY',
-    'X-Content-Type-Options': 'nosniff',
-    'Referrer-Policy': 'same-origin',
-  });
-  // Only where HTTPS is certain: a browser that gets this over HTTP in
+  // HSTS only where HTTPS is certain: a browser that gets this over HTTP in
   // development would refuse plain http://localhost for a year
-  if (process.env.NODE_ENV === 'production') {
-    res.set('Strict-Transport-Security', 'max-age=31536000');
-  }
+  res.set(process.env.NODE_ENV === 'production' ? PROD_HEADERS : BASE_HEADERS);
   next();
 }
 

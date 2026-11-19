@@ -29,7 +29,10 @@ function expiredSessionHandler(err, req, res, next) {
   }
 
   console.warn('Microsoft Graph rejected the access token, signing the user out');
-  req.session.regenerate(() => res.redirect('/login'));
+  req.session.regenerate((regenErr) => {
+    if (regenErr) console.error('Error regenerating expired session:', regenErr.message);
+    res.redirect('/login');
+  });
 }
 
 /**
@@ -37,6 +40,9 @@ function expiredSessionHandler(err, req, res, next) {
  * Differentiates between development and production environments
  */
 function errorHandler(err, req, res, next) {
+  if (res.headersSent) {
+    return next(err);
+  }
   // Determine if we're in development or production
   const isDevelopment = process.env.NODE_ENV !== 'production';
 

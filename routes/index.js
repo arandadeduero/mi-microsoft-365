@@ -21,9 +21,11 @@ const { sendResetEmail } = require('../services/emailService');
 const { getAppToken } = require('../services/tokenService');
 const { createResetToken, readResetToken } = require('../services/resetTokenService');
 const { auditRequest } = require('../services/auditService');
+const { compareEs } = require('../services/formatters');
 const {
   getAllUserData,
   getUserProfile,
+  getAllTenantGroups,
   getGroupsWithMembership,
   getAllUsers,
   getUsersWithManager,
@@ -94,8 +96,7 @@ router.get('/', isAuthenticated, async (req, res, next) => {
  */
 router.get('/profile/me/edit', isAuthenticated, async (req, res, next) => {
   try {
-    const accessToken = req.session.accessToken;
-    const userData = await getAllUserData(accessToken);
+    const profile = await getUserProfile(req.session.accessToken);
 
     // Shown once: what the last save could not change
     const notice = req.session.profileNotice || null;
@@ -104,7 +105,7 @@ router.get('/profile/me/edit', isAuthenticated, async (req, res, next) => {
     res.render('edit-profile', {
       title: 'Editar Perfil',
       currentPage: 'profile',
-      user: userData.profile,
+      user: profile,
       locked: lockedProfileFields(req),
       notice,
     });
@@ -206,13 +207,13 @@ router.get('/teams', isAuthenticated, async (req, res, next) => {
 
     // Sort channels for every team
     teamsWithChannels.forEach(team => {
-      team.channels.sort((a, b) => a.displayName.localeCompare(b.displayName));
+      team.channels.sort((a, b) => compareEs(a.displayName, b.displayName));
     });
 
     // Separate and sort teams
     let todoAyto = teamsWithChannels.find(t => t.displayName === 'Todo Ayuntamiento');
     let otherTeams = teamsWithChannels.filter(t => t.displayName !== 'Todo Ayuntamiento');
-    otherTeams.sort((a, b) => a.displayName.localeCompare(b.displayName));
+    otherTeams.sort((a, b) => compareEs(a.displayName, b.displayName));
 
     res.render('teams', {
       title: 'Teams',
@@ -280,12 +281,11 @@ router.post('/groups/generate-report', isAuthenticated, async (req, res, next) =
 
     // Get access token to fetch group details
     const accessToken = req.session.accessToken;
-    const groupsData = await getGroupsWithMembership(accessToken);
+    const allGroups = await getAllTenantGroups(accessToken);
+    const wantedIds = new Set(Array.isArray(selectedGroups) ? selectedGroups : [selectedGroups]);
 
     // Filter selected groups
-    const selectedGroupDetails = groupsData.allGroups.filter(g => 
-      selectedGroups.includes(g.id)
-    );
+    const selectedGroupDetails = allGroups.filter(g => wantedIds.has(g.id));
 
     // Generate report text
     let report = 'Groups Access Request\n';

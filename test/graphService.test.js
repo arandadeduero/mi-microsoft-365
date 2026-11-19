@@ -13,6 +13,7 @@ const graph = require('../services/graphService');
 
 test.beforeEach(() => {
   http.reset();
+  graph.resetGraphCaches();
 });
 
 test.serial('getUserProfile sends the bearer token and returns the profile', async t => {
@@ -85,8 +86,10 @@ test.serial('getAllUsers follows @odata.nextLink until the last page', async t =
 
   t.deepEqual(await graph.getAllUsers('token'), [{ id: 'u1' }, { id: 'u2' }, { id: 'u3' }]);
   t.is(http.calls.length, 3);
-  // Later pages are requested with the token but without repeating the query
-  t.deepEqual(http.calls[2].config, { headers: { Authorization: 'Bearer token' } });
+  // Later pages are requested with the token and timeout, without repeating the query
+  t.is(http.calls[2].config.headers.Authorization, 'Bearer token');
+  t.is(http.calls[2].config.params, undefined);
+  t.true(http.calls[2].config.timeout > 0);
 });
 
 test.serial('getUserGroups and getAllTenantGroups read every page', async t => {
@@ -350,4 +353,45 @@ test.serial('resetUserPassword throws when Graph rejects the change', async t =>
   http.fail('patch', '/users/u1', 403);
 
   await t.throwsAsync(() => graph.resetUserPassword('app-token', 'u1', 'x'), { message: 'Failed to reset password' });
+});
+
+test.serial('hasUserPhoto checks photo metadata without downloading bytes', async t => {
+  http.on('get', '/me/photo', { id: 'default' });
+  t.true(await graph.hasUserPhoto('token'));
+  t.is(http.calls[0].config.params.$select, 'id');
+
+  http.fail('get', '/me/photo', 404);
+  t.false(await graph.hasUserPhoto('token'));
+});
+
+test.serial('GET requests retry on 429 honoring Retry-After', async t => {
+  let attempts = 0;
+  http.on('get', '/v1.0/me', () => {
+    attempts += 1;
+    if (attempts === 1) {
+      const error = new Error('Too Many Requests');
+      error.response = { status: 429, headers: { 'retry-after': '0' }, data: {} };
+      throw error;
+    }
+    return { displayName: 'Alice' };
+  });
+
+  const profile = await graph.getUserProfile('token');
+  t.deepEqual(profile, { displayName: 'Alice' });
+  t.is(attempts, 2);
+});
+
+test.serial('getServicePrincipal and getRooms cache successful lookups', async t => {
+  http.on('get', '/servicePrincipals/sp1', { id: 'sp1', displayName: 'App One' });
+  http.on('get', '/places/microsoft.graph.room', { value: [{ displayName: 'Sala 1', emailAddress: 'sala1@x' }] });
+
+  const firstSp = await graph.getServicePrincipal('token', 'sp1');
+  const secondSp = await graph.getServicePrincipal('token', 'sp1');
+  t.deepEqual(firstSp, secondSp);
+  t.is(http.callsTo('get', '/servicePrincipals/sp1').length, 1);
+
+  const firstRooms = await graph.getRooms('token');
+  const secondRooms = await graph.getRooms('token');
+  t.deepEqual(firstRooms, secondRooms);
+  t.is(http.callsTo('get', '/places/microsoft.graph.room').length, 1);
 });

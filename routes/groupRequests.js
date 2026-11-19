@@ -13,10 +13,11 @@
 
 const express = require('express');
 const router = express.Router();
-const { ADMIN_EMAIL, APP_ORIGIN, APP_NAME } = require('../config/appConfig');
+const appConfig = require('../config/appConfig');
 const { isAuthenticated } = require('../middleware/auth');
 const { userError } = require('../middleware/errorHandler');
 const { auditRequest } = require('../services/auditService');
+const { mapWithConcurrency } = require('../services/asyncUtils');
 const requestStore = require('../services/requestStore');
 const { isManageable } = require('../services/accountInsights');
 const {
@@ -68,40 +69,47 @@ router.post('/api/group-access-request', isAuthenticated, async (req, res, next)
 
     // Fetch group details, never trusting names sent by the browser
     const groupsData = await getGroupsWithMembership(accessToken);
-    const groups = groupsData.allGroups.filter(g => selectedGroups.includes(g.id) && !g.isMember);
+    const wantedIds = new Set(selectedGroups);
+    const groups = groupsData.allGroups.filter(g => wantedIds.has(g.id) && !g.isMember);
 
-    const ownersByGroup = await Promise.all(groups.map(group =>
+    const ownersByGroup = await mapWithConcurrency(groups, 6, group =>
       requester.id && isManageable(group) ? getGroupOwners(accessToken, group.id) : []
-    ));
+    );
 
     const forAdmin = [];
-    let sentToOwners = 0;
+    const ownerTargets = [];
 
     for (const [index, group] of groups.entries()) {
       const owners = ownersByGroup[index].map(owner => owner.mail || owner.userPrincipalName).filter(Boolean);
-
       if (owners.length === 0) {
         forAdmin.push(group);
-        continue;
-      }
-
-      const { request, created } = requestStore.createRequest({
-        groupId: group.id,
-        groupName: group.displayName,
-        requester,
-      });
-      sentToOwners += 1;
-
-      // Asking twice does not write to the owners twice
-      if (created) {
-        await auditRequest(req, 'group_request.created', { requestId: request.id, groupId: group.id });
-        await notify(req, {
-          to: owners,
-          subject: `[${APP_NAME}] Solicitud de acceso a ${group.displayName}`,
-          body: `${requester.name} (${requester.email}) solicita unirse al grupo "${group.displayName}", del que eres propietario.\n\nPuedes aprobar o rechazar la solicitud aquí:\n${APP_ORIGIN}/groups/requests`,
-        });
+      } else {
+        ownerTargets.push({ group, owners });
       }
     }
+
+    const stored = requestStore.createRequests(ownerTargets.map(({ group }) => ({
+      groupId: group.id,
+      groupName: group.displayName,
+      requester,
+    })));
+    const sentToOwners = ownerTargets.length;
+
+    // Asking twice does not write to the owners twice
+    const toNotify = stored
+      .map((entry, index) => ({ ...entry, ...ownerTargets[index] }))
+      .filter(entry => entry.created);
+
+    await mapWithConcurrency(toNotify, 3, async ({ request, group, owners }) => {
+      await Promise.all([
+        auditRequest(req, 'group_request.created', { requestId: request.id, groupId: group.id }),
+        notify(req, {
+          to: owners,
+          subject: `[${appConfig.APP_NAME}] Solicitud de acceso a ${group.displayName}`,
+          body: `${requester.name} (${requester.email}) solicita unirse al grupo "${group.displayName}", del que eres propietario.\n\nPuedes aprobar o rechazar la solicitud aquí:\n${appConfig.APP_ORIGIN}/groups/requests`,
+        }),
+      ]);
+    });
 
     if (forAdmin.length > 0) {
       let body = `The user ${requester.name} (${requester.email}) is requesting access to the following groups:\n\n`;
@@ -110,9 +118,9 @@ router.post('/api/group-access-request', isAuthenticated, async (req, res, next)
       });
 
       await sendEmail(accessToken, {
-        to: ADMIN_EMAIL,
+        to: appConfig.ADMIN_EMAIL,
         subject: '[m365-admin] Group Access Request',
-        body: body,
+        body,
       });
       await auditRequest(req, 'request.group_access', { groups: forAdmin.map(g => g.id) });
     }
@@ -139,12 +147,13 @@ router.post('/api/group-access-request', isAuthenticated, async (req, res, next)
 router.get('/groups/requests', isAuthenticated, async (req, res, next) => {
   try {
     const ownedGroups = await getOwnedGroups(req.session.accessToken);
+    const { pending, mine } = requestStore.listForUser(ownedGroups.map(g => g.id), currentUser(req).id);
 
     res.render('group-requests', {
       title: 'Solicitudes de grupos',
       currentPage: 'groups',
-      pending: requestStore.listPendingForGroups(ownedGroups.map(g => g.id)),
-      mine: requestStore.listByRequester(currentUser(req).id),
+      pending,
+      mine,
     });
   } catch (error) {
     next(error);
@@ -181,16 +190,18 @@ router.post('/groups/requests/:id/approve', isAuthenticated, async (req, res, ne
 
     await addGroupMember(req.session.accessToken, request.groupId, request.requester.id);
     requestStore.resolveRequest(request.id, 'approved', currentUser(req).email);
-    await auditRequest(req, 'group_request.approved', {
-      requestId: request.id,
-      groupId: request.groupId,
-      member: request.requester.email,
-    });
-    await notify(req, {
-      to: request.requester.email,
-      subject: `[${APP_NAME}] Ya formas parte de ${request.groupName}`,
-      body: `Tu solicitud para unirte al grupo "${request.groupName}" ha sido aprobada.`,
-    });
+    await Promise.all([
+      auditRequest(req, 'group_request.approved', {
+        requestId: request.id,
+        groupId: request.groupId,
+        member: request.requester.email,
+      }),
+      notify(req, {
+        to: request.requester.email,
+        subject: `[${appConfig.APP_NAME}] Ya formas parte de ${request.groupName}`,
+        body: `Tu solicitud para unirte al grupo "${request.groupName}" ha sido aprobada.`,
+      }),
+    ]);
 
     res.redirect('/groups/requests');
   } catch (error) {
@@ -207,16 +218,18 @@ router.post('/groups/requests/:id/reject', isAuthenticated, async (req, res, nex
     const request = await loadRequestToResolve(req);
 
     requestStore.resolveRequest(request.id, 'rejected', currentUser(req).email);
-    await auditRequest(req, 'group_request.rejected', {
-      requestId: request.id,
-      groupId: request.groupId,
-      member: request.requester.email,
-    });
-    await notify(req, {
-      to: request.requester.email,
-      subject: `[${APP_NAME}] Solicitud de acceso a ${request.groupName}`,
-      body: `Tu solicitud para unirte al grupo "${request.groupName}" no ha sido aprobada. Si crees que es un error, habla con los propietarios del grupo.`,
-    });
+    await Promise.all([
+      auditRequest(req, 'group_request.rejected', {
+        requestId: request.id,
+        groupId: request.groupId,
+        member: request.requester.email,
+      }),
+      notify(req, {
+        to: request.requester.email,
+        subject: `[${appConfig.APP_NAME}] Solicitud de acceso a ${request.groupName}`,
+        body: `Tu solicitud para unirte al grupo "${request.groupName}" no ha sido aprobada. Si crees que es un error, habla con los propietarios del grupo.`,
+      }),
+    ]);
 
     res.redirect('/groups/requests');
   } catch (error) {

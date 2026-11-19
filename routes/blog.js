@@ -8,7 +8,25 @@ const { getCategories } = require('../services/wpService');
 const { sendEmail } = require('../services/graphService');
 const { jetpackEmail } = require('../config/wpConfig');
 
-const upload = multer({ storage: multer.memoryStorage() });
+// Graph /me/sendMail rejects total payloads above 4 MB (after base64 expansion)
+const MAX_ATTACHMENT_BYTES = 3 * 1024 * 1024;
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_ATTACHMENT_BYTES, files: 5 },
+});
+
+function uploadFiles(req, res, next) {
+  upload.array('files', 5)(req, res, (error) => {
+    if (!error) return next();
+    if (error.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).send('Cada archivo adjunto puede ocupar como máximo 3 MB.');
+    }
+    if (error.code === 'LIMIT_FILE_COUNT' || error.code === 'LIMIT_UNEXPECTED_FILE') {
+      return res.status(400).send('Puedes adjuntar como máximo 5 archivos.');
+    }
+    return res.status(400).send('No se han podido procesar los archivos adjuntos.');
+  });
+}
 
 router.get('/blog', isAuthenticated, checkPermission('/blog'), async (req, res, next) => {
   try {
@@ -23,7 +41,7 @@ router.get('/blog', isAuthenticated, checkPermission('/blog'), async (req, res, 
   }
 });
 
-router.post('/blog', isAuthenticated, checkPermission('/blog'), upload.array('files', 5), verifyCsrfToken, async (req, res, next) => {
+router.post('/blog', isAuthenticated, checkPermission('/blog'), uploadFiles, verifyCsrfToken, async (req, res, next) => {
   try {
     const { title, content, categories, delay, status } = req.body;
     const files = req.files;

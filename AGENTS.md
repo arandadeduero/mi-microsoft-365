@@ -30,7 +30,7 @@ No linter, formatter, build step or coverage report. Node >= 25 (`engines`, Dock
 - `routes/auth.js` — `/auth/signin`, `/auth/callback`, `/auth/logout`.
 - `routes/index.js` — profile, groups, teams, `/organigrama` (`services/orgChart.js` builds one tree under `ORG_CHART_ROOT` + unassigned list; `public/js/organigrama.js` renders with d3-org-chart; plain-text initials, no avatar service), `/api/*`, and public password reset.
 - `routes/directory.js` — `/directorio`, CSV export, `/directorio/:id` (contact card + local QR via `qrcode`), `/directorio/:id/vcard` (`services/vcard.js`).
-- `routes/account.js` — `/account` (+ calendar sharing), `/account/groups`, `/account/sign-ins` (+ `/report`), `/account/mailboxes`, `/profile/me/auto-reply`, `/profile/me/photo`. Logic in `services/accountInsights.js` (pure) and `config/licenseCatalog.js`.
+- `routes/account.js` — `/account`, `/account/calendars` (calendar sharing + calendars shared with me), `/account/groups`, `/account/sign-ins` (+ `/report`), `/account/mailboxes`, `/profile/me/auto-reply`, `/profile/me/photo`. Logic in `services/accountInsights.js` (pure) and `config/licenseCatalog.js`.
 - `routes/activity.js` — `/account/activity`: user's own audit entries labeled by `config/auditEvents.js` (add a label for every new audit event).
 - `routes/apps.js` — `/account/apps`: delegated app grants described by `services/appGrants.js` (pure); read-only (revoking links to Microsoft).
 - `routes/sharing.js` — `/account/sharing`: OneDrive delta walk (capped at 25 pages / 150 shared items), permissions classified by `services/sharing.js` (pure); shows only anonymous links and external people, re-reads permissions before deletion. **A person with no address is not an outsider** (same rule as calendar sharing: no false alarms).
@@ -58,7 +58,7 @@ No linter, formatter, build step or coverage report. Node >= 25 (`engines`, Dock
 - **Locked profile fields are skipped on POST.** Fields absent from `PROFILE_EDITABLE_FIELDS` or in `req.session.profileRefused` render as disabled inputs (not posted by browsers); reading absence as emptied would clear them. `lockedProfileFields()` decides for both view and handler.
 - **Read mutable `config/appConfig.js` properties at request time** (`appConfig.SHARED_MAILBOXES`, `appConfig.PROFILE_EDITABLE_FIELDS`, `appConfig.ADMIN_EMAIL`) instead of destructuring at module load, so tests can override them.
 - **d3-org-chart only flags nodes.** `setCentered`, `setHighlighted`, `setExpanded` require `render()` to draw; `_expanded` means the node itself is visible, not its children. Escape card names with `escapeHtml`.
-- **`checkAdminStatus` runs on every request** and calls Graph once per request for signed-in users.
+- **`checkAdminStatus` caches roles in `req.session.adminStatus` for 5 minutes** on regular pages (skipping cache on failed lookups) and always verifies live against Graph on `/admin/*` routes.
 - **Errors:** Pages call `next(err)` with `err.status` (`views/error.ejs`). Messages are hidden in production unless `err.expose` is set (see `userError()` in `routes/index.js`). `/api/*` returns `{ success: false, error }` JSON; `/blog` POST and permission denials return plain text.
 - **Env vars read at require time:** `ADMIN_EMAIL` and `REDIRECT_URI` (`routes/index.js`), `RESET_RATE_LIMIT` (`middleware/rateLimit.js`). `TOKEN_SECRET` is read on use so the app boots without it and only password reset fails.
 
@@ -117,7 +117,7 @@ Ava + supertest, one worker per file; nothing may reach the network:
 
 - `test/helpers/env.js` — require first in every test file: sets `NODE_ENV=test`, pins env vars, points `AUDIT_DIR`/`DATA_DIR` to per-file temp dirs, and sets `RESET_RATE_LIMIT` high (only `test/rate-limit.test.js` lowers it).
 - `test/helpers/stubs.js` — `stubAxios()` (matches method + URL suffix, records calls, unmatched → 404), `stubMsal()` (controls token lifetime/renewal failure and `msal.account` to switch users; Graph stub answers are test-controlled vars), `stubSes()`, `waitFor()`, `getCsrfToken(agent)`, `auditEvents()`. Create stubs **before** requiring `../server` (`wpService` calls `axios.create` at load).
-- Tests sharing a stub use `test.serial` and reset it in `beforeEach`.
+- Tests sharing a stub use `test.serial` and reset it in `beforeEach` (also call `resetGraphCaches()`, `resetCategoryCache()`, `resetMessageCache()` where those endpoints are stubbed).
 - **Sessions & CSRF:** Sign in via `signInAgent(agent)` (runs real `/auth/signin` + `/auth/callback` with stubbed MSAL) using a supertest agent. POSTs require a cookie + CSRF token (`getCsrfToken(agent)` as header or `_csrf`). Log agents out (`/auth/logout`) after fetching pages with forms so session files aren't left in `sessions/`. Use a dedicated session (`freshSession` in `test/authenticated.test.js`) for profile-refusal tests.
 - **Call counting:** Sign-in triggers regional-settings calls (clear `http.calls` after sign-in or stub already-correct settings; see `test/csrf.test.js`, `test/token-refresh.test.js`). Incident lookup runs once per process on the first signed-in page — filter out `/serviceAnnouncement/`.
 - `test/tokenService.test.js` runs real MSAL against a fake endpoint via `msalConfig.system.networkClient`.

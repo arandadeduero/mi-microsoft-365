@@ -43,9 +43,13 @@ test('pages load their styles, scripts and typeface from the app, not from other
   const css = await request(app).get('/css/custom.css').expect(200);
   t.false(/url\(\s*['"]?https?:/.test(css.text));
 
-  await request(app).get('/vendor/bootstrap-5.3.3.min.css').expect(200);
+  const vendorCss = await request(app).get('/vendor/bootstrap-5.3.3.min.css').expect(200);
+  t.true(vendorCss.headers['cache-control'].includes('immutable'));
   await request(app).get('/vendor/bootstrap-5.3.3.bundle.min.js').expect(200);
   await request(app).get('/vendor/fonts/outfit-latin.woff2').expect(200).expect('Content-Type', 'font/woff2');
+  await request(app).get('/favicon.svg').expect(200);
+  await request(app).get('/favicon.ico').expect(204);
+  await request(app).get('/healthz').expect(204);
 });
 
 test('every response carries the security headers, and pages can only be shown by themselves', async t => {

@@ -139,3 +139,43 @@ test.serial('checkAdminStatus treats users without roles as non-admin', async t 
 
     t.deepEqual(res.locals, { isAdmin: false, adminRoles: [] });
 });
+
+test.serial('checkAdminStatus caches roles in session on normal pages and verifies live on /admin/*', async t => {
+    http.reset();
+    http.on('get', '/me/memberOf/microsoft.graph.directoryRole', { value: [{ displayName: 'Global Administrator' }] });
+    const session = { accessToken: 'token' };
+
+    const res1 = { locals: {} };
+    await checkAdminStatus({ path: '/', session }, res1, () => {});
+    t.deepEqual(res1.locals, { isAdmin: true, adminRoles: ['Global Administrator'] });
+    t.is(http.calls.length, 1);
+
+    // Second regular page reuses session cache without calling Graph
+    const res2 = { locals: {} };
+    await checkAdminStatus({ path: '/directorio', session }, res2, () => {});
+    t.deepEqual(res2.locals, { isAdmin: true, adminRoles: ['Global Administrator'] });
+    t.is(http.calls.length, 1);
+
+    // Admin route always verifies live against Graph
+    http.on('get', '/me/memberOf/microsoft.graph.directoryRole', { value: [] });
+    const res3 = { locals: {} };
+    await checkAdminStatus({ path: '/admin/audit', session }, res3, () => {});
+    t.deepEqual(res3.locals, { isAdmin: false, adminRoles: [] });
+    t.is(http.calls.length, 2);
+});
+
+test.serial('checkAdminStatus does not cache failed Graph role lookups', async t => {
+    http.reset();
+    http.fail('get', '/me/memberOf/microsoft.graph.directoryRole', 500);
+    const session = { accessToken: 'token' };
+
+    const res1 = { locals: {} };
+    await checkAdminStatus({ path: '/', session }, res1, () => {});
+    t.deepEqual(res1.locals, { isAdmin: false, adminRoles: [] });
+    t.is(session.adminStatus, undefined);
+
+    http.on('get', '/me/memberOf/microsoft.graph.directoryRole', { value: [{ displayName: 'Global Administrator' }] });
+    const res2 = { locals: {} };
+    await checkAdminStatus({ path: '/', session }, res2, () => {});
+    t.deepEqual(res2.locals, { isAdmin: true, adminRoles: ['Global Administrator'] });
+});

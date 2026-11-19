@@ -20,8 +20,8 @@
             <li class="list-group-item px-0">
               <a href="https://admin.microsoft.com/#/MessageCenter/:/messages/<%= encodeURIComponent(message.id) %>" target="_blank" rel="noopener" class="fw-semibold text-decoration-none"><%= message.title %></a>
               <% if (message.isMajorChange) { %> <span class="badge bg-warning text-dark">Cambio importante</span><% } %>
-              <% if (message.actionRequiredByDateTime) { %> <span class="badge bg-danger">Actuar antes del <%= new Date(message.actionRequiredByDateTime).toLocaleDateString('es-ES') %></span><% } %>
-              <br><span class="text-muted small"><%= (message.services || []).join(', ') %><% if (message.category) { %> · <%= message.category %><% } %> · <%= new Date(message.lastModifiedDateTime).toLocaleDateString('es-ES') %></span>
+              <% if (message.actionRequiredByDateTime) { %> <span class="badge bg-danger">Actuar antes del <%= formatShortDate(message.actionRequiredByDateTime) %></span><% } %>
+              <br><span class="text-muted small"><%= (message.services || []).join(', ') %><% if (message.category) { %> · <%= message.category %><% } %> · <%= formatShortDate(message.lastModifiedDateTime) %></span>
             </li>
           <% }); %>
         </ul>

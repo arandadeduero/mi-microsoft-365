@@ -13,6 +13,7 @@ const { describeAppGrants } = require('../services/appGrants');
 const http = stubAxios();
 stubMsal();
 
+const { resetGraphCaches } = require('../services/graphService');
 const app = require('../server');
 
 const SP_A = 'aaaaaaaa-0000-0000-0000-000000000001';
@@ -27,6 +28,7 @@ test.before(async () => {
 test.after.always(() => agent.get('/auth/logout'));
 test.beforeEach(() => {
   http.reset();
+  resetGraphCaches();
   http.on('get', '/v1.0/me', { displayName: 'Alice Example' });
 });
 

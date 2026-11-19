@@ -11,6 +11,8 @@ if (process.env.NODE_ENV !== 'test') {
   require('dotenv').config();
 }
 
+const { LogLevel } = require('@azure/msal-node');
+
 const msalConfig = {
   auth: {
     // Client ID from Azure App Registration
@@ -31,7 +33,7 @@ const msalConfig = {
         }
       },
       piiLoggingEnabled: false,
-      logLevel: process.env.NODE_ENV === 'production' ? 3 : 1, // Error in prod, Info in dev
+      logLevel: process.env.NODE_ENV === 'development' ? LogLevel.Info : LogLevel.Error,
     },
   },
 };

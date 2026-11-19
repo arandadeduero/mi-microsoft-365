@@ -15,6 +15,7 @@ const {
   buildChecklist,
   describeSignIn,
   describeCalendarSharing,
+  describeMyCalendars,
   isManageable,
 } = require('../services/accountInsights');
 
@@ -265,6 +266,34 @@ test('entries without access are left out, and an unknown level is shown as it c
 test('calendar sharing that could not be read is unknown, not empty', t => {
   t.is(describeCalendarSharing(null), null);
   t.deepEqual(describeCalendarSharing([]), []);
+});
+
+test('calendar entries in the organization domain are not flagged as external even if Graph says isInsideOrganization is false', t => {
+  const [sharedMailbox, lookalike, outsider] = describeCalendarSharing([
+    shared('read', 'alcaldia@arandadeduero.es', { isInsideOrganization: false }),
+    shared('read', 'alcaldia@notarandadeduero.es', { isInsideOrganization: false }),
+    shared('read', 'alguien@gmail.com', { isInsideOrganization: false }),
+  ], 'arandadeduero.es');
+
+  t.false(sharedMailbox.external);
+  t.true(lookalike.external);
+  t.true(outsider.external);
+});
+
+test('describeMyCalendars splits own calendars from calendars shared with the user', t => {
+  const result = describeMyCalendars([
+    { id: 'c1', name: 'Calendario', isDefaultCalendar: true, canEdit: true, owner: { name: 'Alice', address: 'alice@arandadeduero.es' } },
+    { id: 'c2', name: 'Comisiones', isDefaultCalendar: false, canEdit: true, owner: { name: 'Alice', address: 'alice@arandadeduero.es' } },
+    { id: 'c3', name: 'Agenda Alcaldía', isDefaultCalendar: false, canEdit: true, canViewPrivateItems: true, owner: { name: 'Alcaldía', address: 'alcaldia@arandadeduero.es' } },
+    { id: 'c4', name: 'Calendario', isDefaultCalendar: false, canEdit: false, canViewPrivateItems: false, owner: { name: 'Bob Ruiz', address: 'bob@arandadeduero.es' } },
+  ], 'alice@arandadeduero.es');
+
+  t.deepEqual(result.own.map(c => [c.name, c.isDefault]), [['Calendario', true], ['Comisiones', false]]);
+  t.deepEqual(result.sharedWithMe.map(c => [c.ownerName, c.name, c.canEdit, c.access]), [
+    ['Alcaldía', 'Agenda Alcaldía', true, 'Puedes ver y cambiar citas (incluidas las privadas)'],
+    ['Bob Ruiz', 'Calendario', false, 'Solo lectura'],
+  ]);
+  t.is(describeMyCalendars(null, 'alice@arandadeduero.es'), null);
 });
 
 test('only Microsoft 365 groups and plain security groups can be changed through Graph', t => {

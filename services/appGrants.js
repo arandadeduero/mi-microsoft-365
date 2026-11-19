@@ -2,6 +2,8 @@
  * What the permissions an app holds on a person's account mean. Pure functions.
  */
 
+const { compareEs } = require('./formatters');
+
 const SCOPES = {
   openid: 'Iniciar sesión con tu cuenta',
   profile: 'Ver tu nombre y tu foto',
@@ -79,6 +81,7 @@ function describeAppGrants(grants, principals, ownAppId) {
     .map((app) => {
       const principal = principals.get(app.id) || {};
       const scopes = [...app.scopes].sort();
+      const permissions = scopes.map(scope => ({ scope, text: SCOPES[scope] || scope, reachesContent: REACHES_CONTENT.test(scope) }));
       return {
         id: app.id,
         name: principal.displayName || 'Aplicación sin nombre',
@@ -88,11 +91,11 @@ function describeAppGrants(grants, principals, ownAppId) {
         isThisPortal: Boolean(ownAppId) && principal.appId === ownAppId,
         forEveryone: app.forEveryone,
         forMe: app.forMe,
-        permissions: scopes.map(scope => ({ scope, text: SCOPES[scope] || scope, reachesContent: REACHES_CONTENT.test(scope) })),
-        reachesContent: scopes.some(scope => REACHES_CONTENT.test(scope)),
+        permissions,
+        reachesContent: permissions.some(p => p.reachesContent),
       };
     })
-    .sort((a, b) => Number(b.reachesContent) - Number(a.reachesContent) || a.name.localeCompare(b.name, 'es'));
+    .sort((a, b) => Number(b.reachesContent) - Number(a.reachesContent) || compareEs(a.name, b.name));
 }
 
 module.exports = { describeAppGrants };

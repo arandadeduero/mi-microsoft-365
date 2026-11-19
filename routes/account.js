@@ -29,20 +29,23 @@ const {
   summarizeRules,
   buildChecklist,
   describeSignIn,
-  describeCalendarSharing
+  describeCalendarSharing,
+  describeMyCalendars
 } = require('../services/accountInsights');
+const { mapWithConcurrency } = require('../services/asyncUtils');
 const {
   getAccountStatus,
   getUserLicenses,
   getAuthenticationMethods,
   getUserDevices,
-  getUserPhoto,
+  hasUserPhoto,
   getUserManager,
   getInboxRules,
   getDriveQuota,
   getMyGroups,
   getRecentSignIns,
   getCalendarPermissions,
+  getMyCalendars,
   shareCalendar,
   removeCalendarPermission,
   canOpenMailbox,
@@ -165,20 +168,16 @@ function htmlToText(html) {
 router.get('/account', isAuthenticated, async (req, res, next) => {
   try {
     const accessToken = req.session.accessToken;
-    // Shown once, after sharing or unsharing the calendar
-    const calendarNotice = req.session.calendarNotice || null;
-    delete req.session.calendarNotice;
 
-    const [status, licenses, methods, devices, photo, manager, rules, quota, calendar] = await Promise.all([
+    const [status, licenses, methods, devices, hasPhoto, manager, rules, quota] = await Promise.all([
       getAccountStatus(accessToken),
       getUserLicenses(accessToken),
       getAuthenticationMethods(accessToken),
       getUserDevices(accessToken),
-      getUserPhoto(accessToken),
+      hasUserPhoto(accessToken),
       getUserManager(accessToken),
       getInboxRules(accessToken),
       getDriveQuota(accessToken),
-      getCalendarPermissions(accessToken),
     ]);
     const security = describeSignInMethods(methods);
 
@@ -191,15 +190,10 @@ router.get('/account', isAuthenticated, async (req, res, next) => {
       security,
       devices,
       mailRules: summarizeRules(rules, permissions.DOMAIN),
-      calendarSharing: describeCalendarSharing(calendar),
-      calendarRoles: CALENDAR_SHARE_ROLES,
-      domain: permissions.DOMAIN,
-      calendarNotice,
-      hasSharedMailboxes: appConfig.SHARED_MAILBOXES.length > 0,
       checklist: buildChecklist({
         security,
         status,
-        hasPhoto: Boolean(photo),
+        hasPhoto,
         manager,
         securityInfoUrl: SECURITY_INFO_URL,
       }),
@@ -223,6 +217,35 @@ const CALENDAR_SHARE_ROLES = {
 const CALENDAR_PERMISSION_ID = /^[A-Za-z0-9_=.-]{1,512}$/;
 
 /**
+ * GET /account/calendars
+ * Who can see my calendar (plus sharing controls) and calendars shared with me
+ */
+router.get('/account/calendars', isAuthenticated, async (req, res, next) => {
+  try {
+    const accessToken = req.session.accessToken;
+    const calendarNotice = req.session.calendarNotice || null;
+    delete req.session.calendarNotice;
+
+    const [calendarPermissions, myCalendars] = await Promise.all([
+      getCalendarPermissions(accessToken),
+      getMyCalendars(accessToken),
+    ]);
+
+    res.render('calendars', {
+      title: 'Mis calendarios',
+      currentPage: 'account',
+      calendarSharing: describeCalendarSharing(calendarPermissions, permissions.DOMAIN),
+      calendars: describeMyCalendars(myCalendars, req.session.account?.username),
+      calendarRoles: CALENDAR_SHARE_ROLES,
+      domain: permissions.DOMAIN,
+      calendarNotice,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
  * POST /account/calendar/share
  * Give a colleague access to the calendar. Only people of the organization:
  * sharing outside is done in Outlook, which warns about it.
@@ -242,7 +265,7 @@ router.post('/account/calendar/share', isAuthenticated, async (req, res, next) =
     await shareCalendar(req.session.accessToken, email, role);
     auditRequest(req, 'calendar.shared', { with: email, role });
     req.session.calendarNotice = `Tu calendario está ahora compartido con ${email}.`;
-    res.redirect('/account#calendario');
+    res.redirect('/account/calendars');
   } catch (error) {
     next(error);
   }
@@ -258,7 +281,7 @@ router.post('/account/calendar/:id/remove', isAuthenticated, async (req, res, ne
     if (!CALENDAR_PERMISSION_ID.test(req.params.id)) {
       throw userError(404, 'Ese acceso no existe.');
     }
-    const current = describeCalendarSharing(await getCalendarPermissions(req.session.accessToken)) || [];
+    const current = describeCalendarSharing(await getCalendarPermissions(req.session.accessToken), permissions.DOMAIN) || [];
     const entry = current.find(permission => permission.id === req.params.id && permission.removable);
     if (!entry) {
       throw userError(404, 'Ese acceso no existe o no se puede quitar desde aquí.');
@@ -267,7 +290,7 @@ router.post('/account/calendar/:id/remove', isAuthenticated, async (req, res, ne
     await removeCalendarPermission(req.session.accessToken, entry.id);
     auditRequest(req, 'calendar.unshared', { with: entry.email });
     req.session.calendarNotice = `${entry.who} ya no puede ver tu calendario.`;
-    res.redirect('/account#calendario');
+    res.redirect('/account/calendars');
   } catch (error) {
     next(error);
   }
@@ -407,7 +430,7 @@ router.get('/account/mailboxes', isAuthenticated, async (req, res, next) => {
   try {
     const accessToken = req.session.accessToken;
     const addresses = appConfig.SHARED_MAILBOXES;
-    const answers = await Promise.all(addresses.map(address => canOpenMailbox(accessToken, address)));
+    const answers = await mapWithConcurrency(addresses, 8, address => canOpenMailbox(accessToken, address));
 
     res.render('mailboxes', {
       title: 'Buzones compartidos',

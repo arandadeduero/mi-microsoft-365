@@ -38,6 +38,48 @@ function writeAll(requests) {
 }
 
 /**
+ * Record several requests to join groups in a single read/write cycle
+ * @param {Array<{groupId: string, groupName: string, requester: Object}>} items
+ * @returns {Array<{request: Object, created: boolean}>}
+ */
+function createRequests(items) {
+  if (items.length === 0) return [];
+  const requests = readAll();
+  const results = [];
+  let dirty = false;
+
+  for (const { groupId, groupName, requester } of items) {
+    const existing = requests.find(r =>
+      r.status === 'pending' && r.groupId === groupId && r.requester.id === requester.id
+    );
+
+    if (existing) {
+      results.push({ request: existing, created: false });
+      continue;
+    }
+
+    const request = {
+      id: crypto.randomUUID(),
+      groupId,
+      groupName,
+      requester,
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      resolvedAt: null,
+      resolvedBy: null,
+    };
+    requests.push(request);
+    dirty = true;
+    results.push({ request, created: true });
+  }
+
+  if (dirty) {
+    writeAll(requests);
+  }
+  return results;
+}
+
+/**
  * Record a request to join a group
  * @param {Object} data
  * @param {string} data.groupId - Group asked for
@@ -46,28 +88,8 @@ function writeAll(requests) {
  * @returns {{request: Object, created: boolean}} The request, and whether it is new
  *   (false when the same person already has one pending for that group)
  */
-function createRequest({ groupId, groupName, requester }) {
-  const requests = readAll();
-  const existing = requests.find(r =>
-    r.status === 'pending' && r.groupId === groupId && r.requester.id === requester.id
-  );
-
-  if (existing) {
-    return { request: existing, created: false };
-  }
-
-  const request = {
-    id: crypto.randomUUID(),
-    groupId,
-    groupName,
-    requester,
-    status: 'pending',
-    createdAt: new Date().toISOString(),
-    resolvedAt: null,
-    resolvedBy: null,
-  };
-  writeAll([...requests, request]);
-  return { request, created: true };
+function createRequest(data) {
+  return createRequests([data])[0];
 }
 
 /**
@@ -86,6 +108,25 @@ function getRequest(id) {
 function listPendingForGroups(groupIds) {
   const wanted = new Set(groupIds);
   return readAll().filter(r => r.status === 'pending' && wanted.has(r.groupId));
+}
+
+/**
+ * Pending requests for owned groups AND requests made by requester, in one disk read
+ * @param {Array<string>} groupIds
+ * @param {string} requesterId
+ * @returns {{pending: Array, mine: Array}}
+ */
+function listForUser(groupIds, requesterId) {
+  const all = readAll();
+  const wanted = new Set(groupIds);
+  const pending = [];
+  const mine = [];
+  for (const r of all) {
+    if (r.status === 'pending' && wanted.has(r.groupId)) pending.push(r);
+    if (r.requester.id === requesterId) mine.push(r);
+  }
+  mine.reverse();
+  return { pending, mine };
 }
 
 /**
@@ -128,8 +169,10 @@ function resolveRequest(id, status, resolvedBy) {
 module.exports = {
   listPending,
   createRequest,
+  createRequests,
   getRequest,
   listPendingForGroups,
   listByRequester,
+  listForUser,
   resolveRequest,
 };

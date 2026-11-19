@@ -6,6 +6,8 @@
  * Pure functions, no Graph calls.
  */
 
+const { compareEs } = require('./formatters');
+
 // Id of the node that stands for the organization when nobody is above everyone else
 const ORG_NODE_ID = 'org';
 
@@ -54,8 +56,8 @@ function buildOrgChart(users, { rootEmail, orgName } = {}) {
   const placed = new Set();
   const queue = tops.map(user => ({ user, parentId: topParentId }));
   queue.forEach(({ user }) => placed.add(user.id));
-  while (queue.length > 0) {
-    const { user, parentId } = queue.shift();
+  for (let head = 0; head < queue.length; head += 1) {
+    const { user, parentId } = queue[head];
     nodes.push({ ...toPerson(user), parentId });
     (reports.get(user.id) || []).forEach((report) => {
       if (placed.has(report.id)) return;
@@ -67,7 +69,7 @@ function buildOrgChart(users, { rootEmail, orgName } = {}) {
   const unplaced = users
     .filter(user => !placed.has(user.id))
     .map(user => ({ ...toPerson(user), managerName: byId.has(user.managerId) ? toPerson(byId.get(user.managerId)).name : null }))
-    .sort((a, b) => a.name.localeCompare(b.name, 'es'));
+    .sort((a, b) => compareEs(a.name, b.name));
 
   return { nodes, unplaced };
 }

@@ -3,6 +3,8 @@
  * that is somebody outside the organization. Pure functions.
  */
 
+const { compareEs } = require('./formatters');
+
 const ROLES = { read: 'puede ver', write: 'puede editar', owner: 'propietario' };
 
 const emailsOf = (permission) => {
@@ -17,7 +19,7 @@ const emailsOf = (permission) => {
 const isOutside = (email, domain) => {
   const address = email.includes('#ext#') ? email.split('#ext#')[0].replace(/_([^_]+)$/, '@$1') : email;
   const at = address.lastIndexOf('@');
-  return at === -1 ? false : address.slice(at + 1) !== domain;
+  return at === -1 ? false : address.slice(at + 1) !== String(domain || '').toLowerCase();
 };
 
 /**
@@ -82,7 +84,7 @@ function describeSharing(entries, domain) {
       insideCount += 1;
     }
   });
-  outside.sort((a, b) => a.name.localeCompare(b.name, 'es'));
+  outside.sort((a, b) => compareEs(a.name, b.name));
   return { outside, insideCount, uncheckedCount };
 }
 

@@ -17,6 +17,8 @@ const { isAuthenticated } = require('../middleware/auth');
 const { userError } = require('../middleware/errorHandler');
 const { auditRequest } = require('../services/auditService');
 const { describeGroup, isManageable } = require('../services/accountInsights');
+const { mapWithConcurrency } = require('../services/asyncUtils');
+const { DIRECTORY_ID, compareEs } = require('../services/formatters');
 const {
   getOwnedGroups,
   getGroupOwners,
@@ -26,9 +28,7 @@ const {
   removeGroupMember
 } = require('../services/graphService');
 
-const DIRECTORY_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-const byName = (a, b) => (a.displayName || '').localeCompare(b.displayName || '');
+const byName = (a, b) => compareEs(a.displayName, b.displayName);
 
 /**
  * Load the group named in the URL, refusing it unless the signed-in user is
@@ -70,7 +70,7 @@ router.get('/groups/owned', isAuthenticated, async (req, res, next) => {
   try {
     const accessToken = req.session.accessToken;
     const groups = (await getOwnedGroups(accessToken)).sort(byName);
-    const owners = await Promise.all(groups.map(group => getGroupOwners(accessToken, group.id)));
+    const owners = await mapWithConcurrency(groups, 8, group => getGroupOwners(accessToken, group.id, { top: 2 }));
 
     res.render('owned-groups', {
       title: 'Grupos que administro',

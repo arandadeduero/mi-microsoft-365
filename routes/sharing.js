@@ -14,6 +14,7 @@ const { userError } = require('../middleware/errorHandler');
 const { auditRequest } = require('../services/auditService');
 const { getSharedDriveItems, getDriveItemPermissions, removeDriveItemPermission } = require('../services/graphService');
 const { describeSharing, describePermission } = require('../services/sharing');
+const { mapWithConcurrency } = require('../services/asyncUtils');
 
 // Shared items whose permissions are read; beyond this the page says so
 const ITEMS_MAX = 150;
@@ -30,11 +31,11 @@ router.get('/account/sharing', isAuthenticated, async (req, res, next) => {
     if (listing) {
       const items = listing.items.slice(0, ITEMS_MAX);
       partial = !listing.complete || listing.items.length > ITEMS_MAX;
-      const entries = [];
-      // A few at a time: one request per item
-      for (let i = 0; i < items.length; i += 8) {
-        entries.push(...await Promise.all(items.slice(i, i + 8).map(async item => ({ item, permissions: await getDriveItemPermissions(token, item.id) }))));
-      }
+      // Sliding pool of 8: one request per item without head-of-line chunk stalls
+      const entries = await mapWithConcurrency(items, 8, async item => ({
+        item,
+        permissions: await getDriveItemPermissions(token, item.id),
+      }));
       sharing = describeSharing(entries, permissions.DOMAIN);
     }
 
@@ -61,7 +62,8 @@ router.post('/account/sharing/:item/permissions/:permission/remove', isAuthentic
     }
     // Read again, so the audit entry can say what kind of access it was
     const current = await getDriveItemPermissions(req.session.accessToken, item);
-    const share = (current || []).map(entry => describePermission(entry, permissions.DOMAIN)).find(entry => entry && entry.id === permission);
+    const matched = (current || []).find(entry => entry && entry.id === permission);
+    const share = matched ? describePermission(matched, permissions.DOMAIN) : null;
     if (!share) {
       throw userError(404, 'Ese acceso ya no existe.');
     }

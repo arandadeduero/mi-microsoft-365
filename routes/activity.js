@@ -17,8 +17,7 @@ const MAX_ENTRIES = 200;
 router.get('/account/activity', isAuthenticated, async (req, res, next) => {
   try {
     const username = (req.session.account?.username || '').toLowerCase();
-    const all = await readAudit({ days: DAYS });
-    const mine = all.filter(entry => (entry.actor || '').toLowerCase() === username);
+    const mine = username ? await readAudit({ days: DAYS, actor: username }) : [];
 
     res.render('my-activity', {
       title: 'Mi actividad',

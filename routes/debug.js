@@ -9,7 +9,7 @@
 const express = require('express');
 const router = express.Router();
 const { isAuthenticated } = require('../middleware/auth');
-const { getUserExtendedInfo } = require('../services/graphService');
+const { getUserProfile } = require('../services/graphService');
 const { version } = require('../package.json');
 
 router.get('/debug', isAuthenticated, async (req, res, next) => {
@@ -20,7 +20,7 @@ router.get('/debug', isAuthenticated, async (req, res, next) => {
       title: 'Datos técnicos',
       currentPage: 'debug',
       blocks: [
-        ['Perfil en Microsoft Graph (/me)', await getUserExtendedInfo(req.session.accessToken)],
+        ['Perfil en Microsoft Graph (/me)', await getUserProfile(req.session.accessToken)],
         ['Cuenta de la sesión', {
           username: account?.username,
           name: account?.name,

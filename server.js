@@ -42,6 +42,15 @@ const { refreshAccessToken, checkAdminStatus } = require('./middleware/auth');
 const { csrfProtection } = require('./middleware/csrf');
 const { securityHeaders } = require('./middleware/securityHeaders');
 const { getServiceIssues } = require('./services/serviceHealthService');
+const {
+  formatShortDate,
+  formatLongDate,
+  formatDateTime,
+  formatDateTimeSeconds,
+  formatSignInDate,
+  formatLocalCommissionDate,
+  formatUtcWeekday,
+} = require('./services/formatters');
 
 // Lists administrators edit from the web replace the ones of config/local.js
 require('./services/settingsStore').applySettings();
@@ -63,10 +72,17 @@ if (process.env.TRUST_PROXY) {
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
-// Names and links every page uses
+// Names, links and cached date formatters every page uses
 app.locals.appName = appConfig.APP_NAME;
 app.locals.orgName = appConfig.ORG_NAME;
 app.locals.intranetUrl = appConfig.INTRANET_URL;
+app.locals.formatShortDate = formatShortDate;
+app.locals.formatLongDate = formatLongDate;
+app.locals.formatDateTime = formatDateTime;
+app.locals.formatDateTimeSeconds = formatDateTimeSeconds;
+app.locals.formatSignInDate = formatSignInDate;
+app.locals.formatLocalCommissionDate = formatLocalCommissionDate;
+app.locals.formatUtcWeekday = formatUtcWeekday;
 
 // The session cookie is signed with this. Without it the app must not run
 // in production; elsewhere a secret for this process only keeps a known
@@ -86,8 +102,15 @@ app.use(securityHeaders);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Serve static files
-app.use(express.static(path.join(__dirname, 'public')));
+// Lightweight healthcheck and favicon fallback before session / Graph middleware
+app.get('/healthz', (req, res) => res.status(204).end());
+app.get('/favicon.ico', (req, res) => res.status(204).end());
+
+// Serve static files with cache lifetimes suited to each kind:
+// versioned vendor bundles are immutable; fonts and app assets revalidate gently
+app.use('/vendor/fonts', express.static(path.join(__dirname, 'public', 'vendor', 'fonts'), { maxAge: '30d' }));
+app.use('/vendor', express.static(path.join(__dirname, 'public', 'vendor'), { maxAge: '1y', immutable: true }));
+app.use(express.static(path.join(__dirname, 'public'), { maxAge: '1h' }));
 
 // Session configuration
 app.use(
@@ -120,11 +143,15 @@ app.use(checkAdminStatus);
 // the path, to mark the current page
 app.use((req, res, next) => {
   const account = req.session && req.session.account;
-  const [username, domain] = (account?.username || '').split('@');
+  const [rawUser, rawDomain] = (account?.username || '').split('@');
+  const username = (rawUser || '').toLowerCase();
+  const domain = (rawDomain || '').toLowerCase();
   res.locals.currentUser = account ? { name: account.name || account.username, username: account.username } : null;
   res.locals.currentPath = req.path;
   // Read at request time: config/local.js and the tests change the list
-  res.locals.canPublish = Boolean(account) && domain === permissions.DOMAIN && (permissions['/blog'] || []).includes(username);
+  res.locals.canPublish = Boolean(account)
+    && domain === (permissions.DOMAIN || '').toLowerCase()
+    && (permissions['/blog'] || []).some(entry => String(entry).toLowerCase() === username);
   res.locals.hasSharedMailboxes = appConfig.SHARED_MAILBOXES.length > 0;
   next();
 });

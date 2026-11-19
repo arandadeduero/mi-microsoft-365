@@ -15,12 +15,21 @@ const IV_LENGTH = 12;
 const TAG_LENGTH = 16;
 const TOKEN_TTL_MS = 15 * 60 * 1000; // 15 minutes
 
+let cachedSecret = null;
+let cachedKey = null;
+
 function getKey() {
-  if (!process.env.TOKEN_SECRET) {
+  const secret = process.env.TOKEN_SECRET;
+  if (!secret) {
     throw new Error('TOKEN_SECRET is not configured');
   }
+  if (secret === cachedSecret && cachedKey) {
+    return cachedKey;
+  }
   // Derive a key that is only ever used for reset links
-  return Buffer.from(crypto.hkdfSync('sha256', process.env.TOKEN_SECRET, '', 'reset-password-link', 32));
+  cachedKey = Buffer.from(crypto.hkdfSync('sha256', secret, '', 'reset-password-link', 32));
+  cachedSecret = secret;
+  return cachedKey;
 }
 
 /**

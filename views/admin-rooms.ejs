@@ -2,7 +2,6 @@
 
 <%
   const RESPONSES = { accepted: 'ha aceptado', declined: 'ha rechazado', tentativelyAccepted: 'quizá', organizer: 'organiza' };
-  const dayName = (date, options) => new Date(date + 'T00:00:00Z').toLocaleDateString('es-ES', Object.assign({ timeZone: 'UTC' }, options));
   const weekUrl = (week) => '/admin/salas?' + new URLSearchParams({ room: room.email, week });
 %>
 <main class="container py-4 page-shell">
@@ -61,7 +60,7 @@
         <div class="card shadow-sm border-0 app-panel mb-3<%= day.date === today ? ' border-start border-primary border-3' : '' %>">
           <div class="card-body p-4">
             <h3 class="h6 text-capitalize<%= day.events.length ? '' : ' mb-0' %>">
-              <%= dayName(day.date, { weekday: 'long', day: 'numeric', month: 'long' }) %>
+              <%= formatUtcWeekday(day.date) %>
               <% if (day.events.length === 0) { %><span class="text-muted fw-normal text-lowercase"> · libre todo el día</span><% } %>
             </h3>
             <% if (day.events.length > 0) { %>
@@ -79,7 +78,7 @@
                         <br>
                         <span class="small">
                           Reservada por <strong><%= event.organizer.name || event.organizer.address || 'alguien que no consta' %></strong><% if (event.organizer.name && event.organizer.address) { %> (<%= event.organizer.address %>)<% } %><% if (event.created) { %>
-                          <span class="text-muted">el <%= new Date(event.created).toLocaleDateString('es-ES', { timeZone: 'Europe/Madrid' }) %></span><% } %>
+                          <span class="text-muted">el <%= formatShortDate(event.created) %></span><% } %>
                         </span>
                         <% if (event.people.length > 0) { %>
                           <br>

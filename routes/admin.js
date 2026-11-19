@@ -27,6 +27,7 @@ const { reviewAccounts, describeLicenseStock } = require('../services/accountRev
 const { getServiceMessages } = require('../services/messageCenterService');
 const { listPending } = require('../services/requestStore');
 const { currentSettings, saveSettings } = require('../services/settingsStore');
+const { compareEs, madridIsoDate } = require('../services/formatters');
 
 // Entries shown at most, so a busy week cannot produce an enormous page
 const MAX_ENTRIES = 500;
@@ -49,17 +50,7 @@ function requireAdmin(req, res, next) {
  */
 router.get('/admin/audit', isAuthenticated, requireAdmin, async (req, res, next) => {
   try {
-    const filters = {
-      day: String(req.query.day || ''),
-      event: String(req.query.event || ''),
-      actor: String(req.query.actor || '').trim().toLowerCase(),
-    };
-
-    const all = await readAudit({ day: filters.day });
-    const matching = all.filter(entry =>
-      (!filters.event || entry.event === filters.event) &&
-      (!filters.actor || (entry.actor || '').toLowerCase().includes(filters.actor))
-    );
+    const { filters, all, matching } = await filteredAudit(req.query);
 
     res.render('audit', {
       title: 'Auditoría',
@@ -115,11 +106,14 @@ router.get('/admin/audit.csv', isAuthenticated, requireAdmin, async (req, res, n
 router.get('/admin/cuentas', isAuthenticated, requireAdmin, async (req, res, next) => {
   try {
     const appToken = await getAppToken();
-    const listing = await getUsersForReview(appToken);
+    const [listing, mfa] = await Promise.all([
+      getUsersForReview(appToken),
+      getMfaRegistration(appToken),
+    ]);
     const review = listing
       ? reviewAccounts(listing.users, {
         signInsKnown: listing.signInsKnown,
-        mfa: await getMfaRegistration(appToken),
+        mfa,
         passwordMaxAgeDays: Number(process.env.PASSWORD_MAX_AGE_DAYS) || null,
       })
       : null;
@@ -177,7 +171,7 @@ async function listRooms(accessToken) {
   return places && places
     .filter(place => place.emailAddress)
     .map(place => ({ name: place.displayName || place.emailAddress, email: place.emailAddress, capacity: place.capacity || null }))
-    .sort((a, b) => a.name.localeCompare(b.name, 'es'));
+    .sort((a, b) => compareEs(a.name, b.name));
 }
 
 /**
@@ -187,35 +181,39 @@ async function listRooms(accessToken) {
  */
 router.get('/admin/salas', isAuthenticated, requireAdmin, async (req, res, next) => {
   try {
-    const rooms = await listRooms(req.session.accessToken);
     const wanted = String(req.query.room || '').toLowerCase();
+    const [rooms, appToken] = await Promise.all([
+      listRooms(req.session.accessToken),
+      wanted ? getAppToken() : null,
+    ]);
     const room = (rooms || []).find(candidate => candidate.email.toLowerCase() === wanted) || null;
 
-    // sv-SE formats as "2026-10-12"
-    const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Madrid' }).format(new Date());
+    const today = madridIsoDate();
     const asked = DATE.test(req.query.week) && !Number.isNaN(Date.parse(req.query.week)) ? req.query.week : today;
     const monday = addDays(asked, -((new Date(`${asked}T00:00:00Z`).getUTCDay() + 6) % 7));
 
     // The period is asked in UTC, a day wider on each side; the days below keep what is theirs
     const events = room
-      ? await getRoomEvents(await getAppToken(), room.email, `${addDays(monday, -1)}T00:00:00`, `${addDays(monday, 8)}T00:00:00`, REGION.timeZone)
+      ? await getRoomEvents(appToken, room.email, `${addDays(monday, -1)}T00:00:00`, `${addDays(monday, 8)}T00:00:00`, REGION.timeZone)
       : null;
 
-    const days = events && [0, 1, 2, 3, 4, 5, 6].map(offset => {
+    const roomEmail = room ? room.email.toLowerCase() : '';
+    const activeEvents = events && events.filter(event => !event.isCancelled);
+    const days = activeEvents && [0, 1, 2, 3, 4, 5, 6].map(offset => {
       const date = addDays(monday, offset);
       const next = addDays(date, 1);
       return {
         date,
-        events: events
+        events: activeEvents
           // Times are local and to the minute, so text compares as time; multi-day events land on each of their days
-          .filter(event => !event.isCancelled && event.start.dateTime.slice(0, 16) < `${next}T00:00` && event.end.dateTime.slice(0, 16) > `${date}T00:00`)
+          .filter(event => event.start.dateTime.slice(0, 16) < `${next}T00:00` && event.end.dateTime.slice(0, 16) > `${date}T00:00`)
           .map(event => ({
             from: event.isAllDay ? null : (event.start.dateTime.startsWith(date) ? event.start.dateTime.slice(11, 16) : '00:00'),
             to: event.isAllDay ? null : (event.end.dateTime.startsWith(date) ? event.end.dateTime.slice(11, 16) : '24:00'),
             subject: (event.subject || '').trim(),
             organizer: event.organizer?.emailAddress || {},
             // The room is an attendee of its own bookings
-            people: (event.attendees || []).filter(person => (person.emailAddress?.address || '').toLowerCase() !== room.email.toLowerCase()),
+            people: (event.attendees || []).filter(person => (person.emailAddress?.address || '').toLowerCase() !== roomEmail),
             pending: event.showAs === 'tentative',
             isPrivate: event.sensitivity === 'private' || event.sensitivity === 'confidential',
             recurring: Boolean(event.type) && event.type !== 'singleInstance',
@@ -252,23 +250,29 @@ const inviteesFor = (kind) => commissions.OTHER_MEETINGS[kind]?.invitees || comm
  * meeting; a list that could not be read has `people: null`, and nothing is
  * assumed about it, so nobody is called to a meeting with no one invited.
  */
-async function commissionSetup(accessToken) {
-  const calendars = await getMyCalendars(accessToken);
-  const calendar = (calendars || []).find(candidate => (candidate.name || '').toLowerCase() === commissions.CALENDAR_NAME.toLowerCase()) || null;
-  const rooms = ((await listRooms(accessToken)) || []).filter(room => room.capacity >= commissions.MIN_ROOM_CAPACITY);
-
+async function commissionSetup(accessToken, listAddresses = null) {
   const others = Object.keys(commissions.OTHER_MEETINGS);
-  const lists = [];
-  for (const address of new Set([commissions.INVITEES, ...others.map(inviteesFor)])) {
-    const members = await getListMembers(accessToken, address);
-    lists.push({
+  const addresses = listAddresses || [...new Set([commissions.INVITEES, ...others.map(inviteesFor)])];
+
+  const [calendars, allRooms, memberLists] = await Promise.all([
+    getMyCalendars(accessToken),
+    listRooms(accessToken),
+    Promise.all(addresses.map(address => getListMembers(accessToken, address))),
+  ]);
+
+  const calendar = (calendars || []).find(candidate => (candidate.name || '').toLowerCase() === commissions.CALENDAR_NAME.toLowerCase()) || null;
+  const rooms = (allRooms || []).filter(room => room.capacity >= commissions.MIN_ROOM_CAPACITY);
+
+  const lists = addresses.map((address, index) => {
+    const members = memberLists[index];
+    return {
       address,
       kinds: [...(address === commissions.INVITEES ? ['Comisiones'] : []), ...others.filter(kind => inviteesFor(kind) === address)],
       // One invitation per address, whatever nested lists repeat
       people: members && [...new Map(members.filter(person => person.mail).map(person => [person.mail.toLowerCase(), { name: person.displayName || person.mail, email: person.mail }])).values()]
-        .sort((a, b) => a.name.localeCompare(b.name, 'es')),
-    });
-  }
+        .sort((a, b) => compareEs(a.name, b.name)),
+    };
+  });
 
   let problem = null;
   if (!calendars) problem = 'Ahora mismo no se pueden leer tus calendarios.';
@@ -306,10 +310,13 @@ router.get('/admin/comisiones', isAuthenticated, requireAdmin, async (req, res, 
  */
 router.post('/admin/comisiones', isAuthenticated, requireAdmin, async (req, res, next) => {
   try {
-    const { calendar, rooms, lists, problem } = await commissionSetup(req.session.accessToken);
+    const commission = [...commissions.COMMISSIONS, ...Object.keys(commissions.OTHER_MEETINGS)].find(name => name === req.body.commission);
+    const { calendar, rooms, lists, problem } = await commissionSetup(
+      req.session.accessToken,
+      commission ? [inviteesFor(commission)] : []
+    );
     if (problem) throw userError(409, problem);
 
-    const commission = [...commissions.COMMISSIONS, ...Object.keys(commissions.OTHER_MEETINGS)].find(name => name === req.body.commission);
     const subject = commissions.COMMISSIONS.includes(commission) ? `Com ${commission}` : commission;
     if (!commission) throw userError(400, 'Elige una comisión de la lista.');
     const list = lists.find(candidate => candidate.address === inviteesFor(commission));

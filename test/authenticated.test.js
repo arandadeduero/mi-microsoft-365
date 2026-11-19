@@ -14,6 +14,7 @@ const http = stubAxios();
 stubMsal();
 
 const permissions = require('../config/permissions');
+const { resetCategoryCache } = require('../services/wpService');
 const app = require('../server');
 
 const agent = request.agent(app);
@@ -50,6 +51,7 @@ test.after.always(async () => {
 
 test.beforeEach(() => {
   http.reset();
+  resetCategoryCache();
   permissions.DOMAIN = 'arandadeduero.es';
   permissions['/blog'] = ['alice'];
 });
@@ -65,7 +67,7 @@ test.serial('GET / renders the profile of the signed-in user', async t => {
   t.true(res.text.includes('Tecnica'));
   t.true(res.text.includes('Obras'));
   t.true(res.text.includes('Boss Person'));
-  t.true(res.text.includes('/images/default-avatar.png'));
+  t.true(res.text.includes('/images/default-avatar.svg'));
   // Name of the portal in the menu, and the intranet one click away
   t.true(res.text.includes('<a class="navbar-brand fw-semibold" href="/">Mi Microsoft 365</a>'));
   t.regex(res.text, /Intranet del Ayuntamiento[\s\S]*?href="https:\/\/aytoarandaduero\.sharepoint\.com" target="_blank" rel="noopener" class="btn btn-primary/);

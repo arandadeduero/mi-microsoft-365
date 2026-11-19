@@ -9,13 +9,19 @@
 
 const axios = require('axios');
 const { getAppToken } = require('./tokenService');
+const { createTtlCache } = require('./asyncUtils');
 
 const MESSAGES_ENDPOINT = 'https://graph.microsoft.com/v1.0/admin/serviceAnnouncement/messages';
 const REFRESH_MS = 30 * 60 * 1000;
 const RETRY_MS = 60 * 60 * 1000;
 const TIMEOUT_MS = 5000;
 
-let cache = { messages: null, expires: 0 };
+const messageCache = createTtlCache({
+  ttlMs: REFRESH_MS,
+  errorTtlMs: RETRY_MS,
+  errorValue: null,
+  maxSize: 1,
+});
 
 async function fetchMessages() {
   const response = await axios.get(MESSAGES_ENDPOINT, {
@@ -33,22 +39,20 @@ async function fetchMessages() {
 /**
  * @returns {Promise<Array|null>} Messages, newest first; null when they cannot be read
  */
-async function getServiceMessages() {
-  if (Date.now() < cache.expires) {
-    return cache.messages;
-  }
-  try {
-    cache = { messages: await fetchMessages(), expires: Date.now() + REFRESH_MS };
-  } catch (error) {
-    console.error('Error fetching service messages:', error.response?.data || error.message);
-    cache = { messages: null, expires: Date.now() + RETRY_MS };
-  }
-  return cache.messages;
+function getServiceMessages() {
+  return messageCache.get('messages', async () => {
+    try {
+      return await fetchMessages();
+    } catch (error) {
+      console.error('Error fetching service messages:', error.response?.data || error.message);
+      throw error;
+    }
+  });
 }
 
 // For tests
 function resetMessageCache() {
-  cache = { messages: null, expires: 0 };
+  messageCache.clear();
 }
 
 module.exports = { getServiceMessages, resetMessageCache };

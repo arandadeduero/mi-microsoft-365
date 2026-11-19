@@ -13,6 +13,7 @@ const http = stubAxios();
 const msal = stubMsal();
 
 const appConfig = require('../config/appConfig');
+const { resetGraphCaches } = require('../services/graphService');
 const app = require('../server');
 
 const ALICE = { username: 'alice@arandadeduero.es', name: 'Alice Example', localAccountId: 'alice-id' };
@@ -40,6 +41,7 @@ const SEARCH = '/salas?date=2026-10-14&start=10:00&end=11:00';
 
 test.beforeEach(() => {
   http.reset();
+  resetGraphCaches();
   http.on('get', ROOMS, {
     value: [
       { displayName: 'Sala B', emailAddress: 'Sala.B@arandadeduero.es', capacity: 8, building: 'Casa Consistorial', floorLabel: 'Planta 1' },

@@ -8,6 +8,7 @@
  */
 
 const { SKU_NAMES, APPS } = require('../config/licenseCatalog');
+const { compareEs } = require('./formatters');
 
 const GIGABYTE = 1024 ** 3;
 
@@ -269,12 +270,15 @@ const CALENDAR_ROLES_THAT_CHANGE = new Set(['write', 'delegateWithoutPrivateEven
 /**
  * Describe who can see the user's calendar
  * @param {Array|null} permissions - calendarPermissions from Graph, or null when unreadable
+ * @param {string} [domain] - The organization's email domain; an address in it is not external even when Graph marks isInsideOrganization as false (e.g. shared mailboxes)
  * @returns {Array|null} One entry per person (or the whole organization) with access
  */
-function describeCalendarSharing(permissions) {
+function describeCalendarSharing(permissions, domain) {
   if (!permissions) {
     return null;
   }
+
+  const orgDomain = domain ? String(domain).toLowerCase() : '';
 
   return permissions
     .filter(permission => permission.role && permission.role !== 'none')
@@ -282,6 +286,8 @@ function describeCalendarSharing(permissions) {
       const address = permission.emailAddress?.address || '';
       // The entry for "everybody in the organization" has a name but no address
       const everyone = !address;
+      const at = address.lastIndexOf('@');
+      const sameDomain = Boolean(orgDomain) && at !== -1 && address.slice(at + 1).toLowerCase() === orgDomain;
       return {
         id: permission.id || null,
         // The default entries (the organization's own) cannot be taken back here
@@ -290,15 +296,72 @@ function describeCalendarSharing(permissions) {
         email: address,
         access: CALENDAR_ROLES[permission.role] || permission.role,
         everyone,
-        external: !everyone && permission.isInsideOrganization === false,
+        external: !everyone && !sameDomain && permission.isInsideOrganization === false,
         canChange: CALENDAR_ROLES_THAT_CHANGE.has(permission.role),
       };
     });
 }
 
+/**
+ * Split the calendars in /me/calendars into the user's own and those others
+ * shared with them (and were accepted/added in Outlook).
+ * @param {Array|null} calendars - Calendars from Graph, or null when unreadable
+ * @param {string} [ownEmail] - Signed-in user's username/email
+ * @returns {{own: Array, sharedWithMe: Array}|null}
+ */
+function describeMyCalendars(calendars, ownEmail) {
+  if (!calendars) {
+    return null;
+  }
+
+  // The default calendar's owner.address is the mailbox's canonical address,
+  // which handles accounts whose primary SMTP differs from their UPN
+  const defaultCalendar = calendars.find(cal => cal.isDefaultCalendar);
+  const ownAddresses = new Set(
+    [ownEmail, defaultCalendar?.owner?.address].filter(Boolean).map(addr => String(addr).toLowerCase())
+  );
+
+  const own = [];
+  const sharedWithMe = [];
+
+  for (const cal of calendars) {
+    const ownerEmail = cal.owner?.address || '';
+    const ownerName = cal.owner?.name || ownerEmail;
+    const isOwn = Boolean(cal.isDefaultCalendar) || !ownerEmail || ownAddresses.has(ownerEmail.toLowerCase());
+
+    if (isOwn) {
+      own.push({
+        id: cal.id || null,
+        name: cal.name || 'Calendario',
+        isDefault: Boolean(cal.isDefaultCalendar),
+        canEdit: cal.canEdit !== false,
+      });
+    } else {
+      const canEdit = Boolean(cal.canEdit);
+      const canViewPrivate = Boolean(cal.canViewPrivateItems);
+      const base = canEdit ? 'Puedes ver y cambiar citas' : 'Solo lectura';
+      sharedWithMe.push({
+        id: cal.id || null,
+        name: cal.name || 'Calendario',
+        ownerName,
+        ownerEmail,
+        canEdit,
+        canViewPrivate,
+        access: canViewPrivate ? `${base} (incluidas las privadas)` : base,
+      });
+    }
+  }
+
+  own.sort((a, b) => Number(b.isDefault) - Number(a.isDefault) || compareEs(a.name, b.name));
+  sharedWithMe.sort((a, b) => compareEs(a.ownerName, b.ownerName) || compareEs(a.name, b.name));
+
+  return { own, sharedWithMe };
+}
+
 module.exports = {
   isManageable,
   describeCalendarSharing,
+  describeMyCalendars,
   describeLicenses,
   describeStorage,
   describeGroup,

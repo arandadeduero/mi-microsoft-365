@@ -11,7 +11,7 @@
 
   <% if (created) { %>
     <div class="alert alert-success">
-      Convocada: <strong><%= created.subject %></strong>, el <%= new Date(created.start + ':00Z').toLocaleString('es-ES', { timeZone: 'UTC', dateStyle: 'full', timeStyle: 'short' }) %> en <%= created.room %>.
+      Convocada: <strong><%= created.subject %></strong>, el <%= formatLocalCommissionDate(created.start) %> en <%= created.room %>.
       Se ha invitado a <%= created.invited %> personas y a la sala.
     </div>
   <% } %>

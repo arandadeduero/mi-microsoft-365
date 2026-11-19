@@ -13,6 +13,7 @@ const request = require('supertest');
 const { stubAxios, stubMsal, signInAgent, getCsrfToken, auditEvents, httpError } = require('./helpers/stubs');
 const { reviewAccounts, describeLicenseStock } = require('../services/accountReview');
 const { resetMessageCache } = require('../services/messageCenterService');
+const { resetGraphCaches } = require('../services/graphService');
 
 const http = stubAxios();
 const msal = stubMsal();
@@ -38,6 +39,7 @@ async function signInAs(t, account, { admin }) {
 test.beforeEach(() => {
   http.reset();
   resetMessageCache();
+  resetGraphCaches();
   http.on('get', '/v1.0/me', { displayName: 'Someone' });
   permissions.DOMAIN = 'arandadeduero.es';
 });

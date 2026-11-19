@@ -257,7 +257,7 @@ test.serial('GET /account shows the OneDrive space used when it is known', async
 
 test.serial('GET /account shows a complete account at 100 %', async t => {
   http.on('get', '/v1.0/me', { lastPasswordChangeDateTime: daysAgo(10), otherMails: ['ana@personal.example'], mobilePhone: '600111222' });
-  http.on('get', '/me/photo/$value', Buffer.from('img'));
+  http.on('get', '/me/photo', { id: 'default' });
   http.on('get', '/me/manager', { id: 'm1', displayName: 'Boss' });
   http.on('get', '/me/authentication/methods', {
     value: [{ '@odata.type': '#microsoft.graph.fido2AuthenticationMethod', displayName: 'Llave' }],
@@ -617,19 +617,20 @@ test.serial('POST /profile/me/photo renders the error page when Graph rejects th
 // ----------------------------------------------------------------- calendar
 
 const CALENDAR = '/me/calendar/calendarPermissions';
+const CALENDARS = '/me/calendars';
 
-test.serial('the calendar can be shared with a colleague from the account page', async t => {
-  http.on('get', '/v1.0/me', {});
+test.serial('the calendar can be shared with a colleague from the calendars page', async t => {
   http.on('get', CALENDAR, { value: [] });
+  http.on('get', CALENDARS, { value: [] });
   http.on('post', CALENDAR, { id: 'perm-1' });
 
   const res = await post('/account/calendar/share').type('form').send({ email: 'Bob@arandadeduero.es', role: 'limitedRead' }).expect(302);
 
-  t.is(res.header.location, '/account#calendario');
+  t.is(res.header.location, '/account/calendars');
   t.deepEqual(http.callsTo('post', CALENDAR)[0].data, { emailAddress: { address: 'bob@arandadeduero.es' }, role: 'limitedRead' });
   t.deepEqual(auditEvents('calendar.shared').at(-1).with, 'bob@arandadeduero.es');
 
-  const page = await agent.get('/account').expect(200);
+  const page = await agent.get('/account/calendars').expect(200);
   t.true(page.text.includes('Tu calendario está ahora compartido con bob@arandadeduero.es.'));
 });
 
@@ -643,14 +644,14 @@ test.serial('the calendar is not shared outside the organization or with a role 
 });
 
 test.serial("somebody's access to the calendar can be taken back, by an id the calendar really has", async t => {
-  http.on('get', '/v1.0/me', {});
   http.on('get', CALENDAR, { value: [
     { id: 'L289', role: 'read', emailAddress: { name: 'Bob Builder', address: 'bob@arandadeduero.es' }, isInsideOrganization: true, isRemovable: true },
     { id: 'ORG', role: 'freeBusyRead', emailAddress: { name: 'My Organization' }, isRemovable: false },
   ] });
+  http.on('get', CALENDARS, { value: [] });
   http.on('delete', `${CALENDAR}/L289`, {});
 
-  const page = await agent.get('/account').expect(200);
+  const page = await agent.get('/account/calendars').expect(200);
   t.true(page.text.includes('action="/account/calendar/L289/remove"'));
   t.false(page.text.includes('action="/account/calendar/ORG/remove"'));
 
@@ -659,13 +660,12 @@ test.serial("somebody's access to the calendar can be taken back, by an id the c
   t.is(http.callsTo('delete', `${CALENDAR}/ORG`).length, 0);
 
   const res = await post('/account/calendar/L289/remove').expect(302);
-  t.is(res.header.location, '/account#calendario');
+  t.is(res.header.location, '/account/calendars');
   t.is(http.callsTo('delete', `${CALENDAR}/L289`).length, 1);
   t.is(auditEvents('calendar.unshared').at(-1).with, 'bob@arandadeduero.es');
 });
 
-test.serial('GET /account lists who can see the calendar and warns about outsiders', async t => {
-  http.on('get', '/v1.0/me', {});
+test.serial('GET /account/calendars lists who can see the calendar, warns about outsiders, and shows calendars shared with the user', async t => {
   http.on('get', CALENDAR, {
     value: [
       { role: 'freeBusyRead', emailAddress: { name: 'My Organization' }, isInsideOrganization: true },
@@ -673,23 +673,36 @@ test.serial('GET /account lists who can see the calendar and warns about outside
       { role: 'read', emailAddress: { name: 'Fuera', address: 'alguien@gmail.com' }, isInsideOrganization: false },
     ],
   });
+  http.on('get', CALENDARS, {
+    value: [
+      { id: 'c1', name: 'Calendario', isDefaultCalendar: true, canEdit: true, owner: { name: 'Alice Example', address: 'alice@arandadeduero.es' } },
+      { id: 'c2', name: 'Agenda Alcaldía', isDefaultCalendar: false, canEdit: true, owner: { name: 'Alcaldía', address: 'alcaldia@arandadeduero.es' } },
+    ],
+  });
 
-  const res = await agent.get('/account').expect(200);
+  const res = await agent.get('/account/calendars').expect(200);
 
   t.true(res.text.includes('Todas las personas del Ayuntamiento'));
   t.true(res.text.includes('Bea Ruiz'));
   t.is(res.text.split('Puede hacer cambios').length - 1, 1);
   t.regex(res.text, /compartido con personas de fuera del Ayuntamiento: <strong>alguien@gmail\.com<\/strong>/);
+  t.true(res.text.includes('Agenda Alcaldía'));
+  t.true(res.text.includes('alcaldia@arandadeduero.es'));
+  t.true(res.text.includes('Puedes editar'));
+  t.true(res.text.includes('Mis calendarios propios'));
 });
 
-test.serial('GET /account tells "shared with nobody" apart from "could not check"', async t => {
-  http.on('get', '/v1.0/me', {});
+test.serial('GET /account/calendars tells empty apart from "could not check"', async t => {
   http.on('get', CALENDAR, { value: [] });
-  const nobody = await agent.get('/account').expect(200);
+  http.on('get', CALENDARS, { value: [] });
+  const nobody = await agent.get('/account/calendars').expect(200);
   t.true(nobody.text.includes('Nadie más puede ver tu calendario'));
+  t.true(nobody.text.includes('No tienes ningún calendario compartido añadido en Outlook'));
 
   http.fail('get', CALENDAR, 403);
-  const unknown = await agent.get('/account').expect(200);
+  http.fail('get', CALENDARS, 403);
+  const unknown = await agent.get('/account/calendars').expect(200);
   t.true(unknown.text.includes('No se ha podido comprobar con quién compartes tu calendario'));
   t.false(unknown.text.includes('Nadie más puede ver tu calendario'));
+  t.true(unknown.text.includes('No se han podido comprobar los calendarios compartidos contigo'));
 });

@@ -63,7 +63,7 @@
               <% entries.forEach(function(entry) { %>
                 <% const { time, event, actor, ip, ...details } = entry; %>
                 <tr>
-                  <td class="text-nowrap"><%= new Date(time).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Europe/Madrid' }) %></td>
+                  <td class="text-nowrap"><%= formatDateTimeSeconds(time) %></td>
                   <td><code><%= event %></code></td>
                   <td><%= actor || '—' %></td>
                   <td><%= ip %></td>

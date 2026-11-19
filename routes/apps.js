@@ -11,9 +11,10 @@ const router = express.Router();
 const { isAuthenticated } = require('../middleware/auth');
 const { getMyAppGrants, getServicePrincipal } = require('../services/graphService');
 const { describeAppGrants } = require('../services/appGrants');
+const { mapWithConcurrency } = require('../services/asyncUtils');
+const { DIRECTORY_ID } = require('../services/formatters');
 
 const MY_APPS_URL = 'https://myapplications.microsoft.com/';
-const DIRECTORY_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 router.get('/account/apps', isAuthenticated, async (req, res, next) => {
   try {
@@ -24,10 +25,10 @@ router.get('/account/apps', isAuthenticated, async (req, res, next) => {
     if (grants) {
       const ids = [...new Set(grants.map(grant => grant.clientId).filter(id => DIRECTORY_ID.test(id)))];
       const principals = new Map();
-      await Promise.all(ids.map(async (id) => {
+      await mapWithConcurrency(ids, 8, async (id) => {
         const principal = await getServicePrincipal(token, id);
         if (principal) principals.set(id, principal);
-      }));
+      });
       apps = describeAppGrants(grants, principals, process.env.CLIENT_ID);
     }
 

@@ -40,7 +40,7 @@
                   <div class="d-flex justify-content-between align-items-center gap-3 mb-2">
                     <div class="small">
                       <% if (share.kind === 'anyone') { %><span class="badge bg-danger">Cualquiera con el enlace</span><% } else { %><span class="badge bg-warning text-dark">Fuera del Ayuntamiento</span> <%= share.outsiders.join(', ') %><% } %>
-                      <span class="text-muted">· <%= share.roles.join(', ') %><% if (share.expires) { %> · caduca el <%= new Date(share.expires).toLocaleDateString('es-ES') %><% } %></span>
+                      <span class="text-muted">· <%= share.roles.join(', ') %><% if (share.expires) { %> · caduca el <%= formatShortDate(share.expires) %><% } %></span>
                     </div>
                     <form action="/account/sharing/<%= encodeURIComponent(item.id) %>/permissions/<%= encodeURIComponent(share.id) %>/remove" method="POST">
                       <input type="hidden" name="_csrf" value="<%= csrfToken() %>">

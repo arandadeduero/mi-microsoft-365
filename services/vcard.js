@@ -4,7 +4,7 @@
  */
 
 // Commas, semicolons, backslashes and line breaks have a meaning in vCard
-const escapeValue = (text) => String(text == null ? '' : text).replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/[,;]/g, (char) => `\\${char}`);
+const escapeValue = (text) => String(text == null ? '' : text).replace(/\\/g, '\\\\').replace(/\r\n|\r|\n/g, '\\n').replace(/[,;]/g, (char) => `\\${char}`);
 
 /**
  * @param {Object} user - Graph user: displayName, givenName, surname, jobTitle, department, officeLocation, businessPhones, mobilePhone, mail

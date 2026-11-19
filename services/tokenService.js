@@ -32,7 +32,6 @@ function sessionTokens(client, response) {
   return {
     accessToken: response.accessToken,
     account: response.account,
-    idToken: response.idToken,
     expiresOn: response.expiresOn,
     tokenCache: client.getTokenCache().serialize(),
   };

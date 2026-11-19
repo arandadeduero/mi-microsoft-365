@@ -9,13 +9,15 @@
 
   function populateManagerSelect() {
     const select = document.getElementById('managerSelect');
-    select.replaceChildren(new Option('-- Selecciona un responsable --', ''));
+    const fragment = document.createDocumentFragment();
+    fragment.appendChild(new Option('-- Selecciona un responsable --', ''));
     allUsers.forEach((user) => {
       const option = new Option(`${user.displayName}${user.jobTitle ? ' - ' + user.jobTitle : ''}${user.department ? ' (' + user.department + ')' : ''}`, user.id);
       option.dataset.name = user.displayName;
       option.dataset.email = user.mail || user.userPrincipalName || '';
-      select.appendChild(option);
+      fragment.appendChild(option);
     });
+    select.replaceChildren(fragment);
   }
 
   async function openManagerDialog() {
