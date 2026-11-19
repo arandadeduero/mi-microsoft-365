@@ -1,0 +1,66 @@
+AGENTS.md
+  h_3aa52f59e1a7c5 44
+README.md
+  h_3aa52f59e1a7c5 144-147
+config/appConfig.js
+  h_3aa52f59e1a7c5 30-32
+config/auditEvents.js
+  h_3aa52f59e1a7c5 31-40
+config/authConfig.js
+  h_3aa52f59e1a7c5 55-58
+middleware/csrf.js
+  h_3aa52f59e1a7c5 17-23
+package-lock.json
+  h_3aa52f59e1a7c5 17,339-367,588-593,749-872,883-898,909-929,972-986,1063-1077,1131-1172,1196-1212,1282-1314,1321-1337,1358-1375,1440-1451,1640-1660,1752-1782,1796-1846,1860-1865,1892-1926,2000-2044,2101-2195,2241-2260,2317-2336,2443-2455,2587-2601,2675-2680,2695-2700,2716-2731,2741-2781,2841-2857,2889-2904,2945-2983,3073-3092,3113-3118,3141-3151,3158-3171,3203-3206,3209-3211,3214-3217,3220,3222-3346,3353-3386,3400-3423,3434-3449,3479-3571,3591-3639,3695-3742,3760-3821,3824-3827,3830,3833-3838,3859-3888,3901-3913,3920-3925,3944-3949,3956-3967,4170-4178,4202-4213,4428-4456,4487-4504,4544-4549,4568-4576,4642-4650,4664-4669,4973-5022,5049-5090,5149-5210,5251-5269,5290-5322,5329-5340,5455-5506,5680-5692,5701-5709,5727-5783,5869-5884,5905-5913,5953-5971,6009-6081,6091-6112,6125-6142,6181-6250,6288-6351,6358-6378,6447-6452,6500-6583
+package.json
+  h_3aa52f59e1a7c5 34
+public/js/admin-users.js
+  h_3aa52f59e1a7c5 1-119
+routes/admin.js
+  h_3aa52f59e1a7c5 103,106,109,112,114,120,128-131
+routes/adminUsers.js
+  h_3aa52f59e1a7c5 1-1374
+server.js
+  h_3aa52f59e1a7c5 28,183
+services/accountReview.js
+  h_3aa52f59e1a7c5 6,26,36,39-43,84
+services/adminUsersExcel.js
+  h_3aa52f59e1a7c5 1-462
+services/adminUsersTools.js
+  h_3aa52f59e1a7c5 1-534
+services/graphService.js
+  h_3aa52f59e1a7c5 39-41,252-280,349-370,434-436,442,1411-1861,1866,1890,1927-1944
+test/adminUsers.test.js
+  h_3aa52f59e1a7c5 1-438
+test/adminUsersServices.test.js
+  h_3aa52f59e1a7c5 1-148
+test/graphService.test.js
+  h_3aa52f59e1a7c5 52-67,92-106,429-775
+views/admin-accounts.ejs
+  h_3aa52f59e1a7c5 5,8-9,42-49
+views/admin-user-edit.ejs
+  h_3aa52f59e1a7c5 1-376
+views/admin-users-excel.ejs
+  h_3aa52f59e1a7c5 1-622
+views/admin-users-managers.ejs
+  h_3aa52f59e1a7c5 1-342
+views/admin-users-quality.ejs
+  h_3aa52f59e1a7c5 1-354
+views/admin-users.ejs
+  h_3aa52f59e1a7c5 1-204
+views/partials/admin-users-nav.ejs
+  h_3aa52f59e1a7c5 1-21
+views/partials/header.ejs
+  h_3aa52f59e1a7c5 111,113,115
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2668ad6dbba74ed7b9a8eac0d13daf6cb9f7268d",
+  "prompts": {},
+  "humans": {
+    "h_3aa52f59e1a7c5": {
+      "author": "Guillermo López <willyaranda@gmail.com>"
+    }
+  }
+}
