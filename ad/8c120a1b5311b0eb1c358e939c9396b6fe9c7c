@@ -1,0 +1,30 @@
+public/css/custom.css
+  h_3aa52f59e1a7c5 1-7,27-149,152-154,157-160,163-166,170-176,180-183,186-188,191-199,201-202,213-214,218-244,248-250,256-262,266,268-270,274,276-289,293-304,310-311,316,319,324-325,329-375,378-380,383-385,393,400,404-426,430-462,465-484,488-509,516-582,587,592-602,612-622,637,639-640,646,665-666,681-682,715-717,732-743,748,755-757,761-765,774-775,780,784,807,829,849-850,868,872,890,896
+public/favicon.svg
+  h_3aa52f59e1a7c5 2
+public/images/default-avatar.svg
+  h_3aa52f59e1a7c5 2
+public/js/organigrama.js
+  h_3aa52f59e1a7c5 103
+public/js/theme.js
+  h_3aa52f59e1a7c5 1-69
+test/routes.test.js
+  h_3aa52f59e1a7c5 50
+views/error.ejs
+  h_3aa52f59e1a7c5 3,6
+views/partials/footer.ejs
+  h_3aa52f59e1a7c5 2-15
+views/partials/header.ejs
+  h_3aa52f59e1a7c5 9,128-140,150
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ad8c120a1b5311b0eb1c358e939c9396b6fe9c7c",
+  "prompts": {},
+  "humans": {
+    "h_3aa52f59e1a7c5": {
+      "author": "Guillermo López <willyaranda@gmail.com>"
+    }
+  }
+}
