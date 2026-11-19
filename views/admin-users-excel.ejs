@@ -1,0 +1,674 @@
+<%- include('partials/header', { scripts: ['/js/confirm.js', '/js/admin-users.js'] }) %>
+
+<%
+  const skuMap = (typeof skuNames !== 'undefined' && skuNames) ? skuNames : {};
+  const labelForSku = function(lic) {
+    if (!lic) return '';
+    if (typeof lic === 'string') return skuMap[lic] || lic;
+    return lic.name || skuMap[lic.skuId] || skuMap[lic.skuPartNumber] || lic.skuPartNumber || lic.skuId || '';
+  };
+%>
+
+<main class="container py-4 page-shell page-error">
+  <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+    <h1 class="h2 mb-0 page-title">Excel: validar, sincronizar e importar</h1>
+  </div>
+
+  <%- include('partials/admin-users-nav', { activeTab: 'excel' }) %>
+
+  <% if (typeof flash !== 'undefined' && flash) { %>
+    <div class="alert alert-success" role="status"><%= flash %></div>
+  <% } %>
+  <% if (typeof errorMsg !== 'undefined' && errorMsg) { %>
+    <div class="alert alert-danger" role="alert"><%= errorMsg %></div>
+  <% } %>
+
+  <% const hasRemoteExcel = typeof excelUrl !== 'undefined' && Boolean(excelUrl); %>
+  <% if (hasRemoteExcel) { %>
+    <div class="card shadow-sm border-0 app-panel mb-4">
+      <div class="card-body p-3 px-4 d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+        <div>
+          <strong>Excel de Personal conectado desde SharePoint</strong>
+          <p class="text-muted small mb-0">
+            El portal lee directamente el archivo compartido de SharePoint sin necesidad de descargarlo ni subirlo a mano.
+          </p>
+        </div>
+        <div class="d-flex flex-wrap gap-2 flex-shrink-0">
+          <a href="<%= excelUrl %>" target="_blank" rel="noopener" class="btn btn-outline-primary btn-sm">Abrir Excel en SharePoint</a>
+          <a href="/admin/usuarios/excel" class="btn btn-primary btn-sm">Recargar desde SharePoint</a>
+        </div>
+      </div>
+    </div>
+  <% } %>
+
+  <!-- 1. Validar archivo Excel (sin conexión) -->
+  <div class="card shadow-sm border-0 app-panel mb-4">
+    <div class="card-body p-4">
+      <h2 class="h5 mb-2">1. Validar archivo Excel</h2>
+      <p class="text-muted small mb-3">
+        Comprueba las 5 reglas de calidad sobre la hoja <code>ACTIVOS</code> sin modificar Microsoft 365:
+        campos obligatorios, formato de correo corporativo, duplicados, fechas válidas y coherencia de datos.
+      </p>
+      <form action="/admin/usuarios/excel/validar" method="POST" enctype="multipart/form-data" class="row g-3 align-items-end">
+        <input type="hidden" name="_csrf" value="<%= csrfToken() %>">
+        <% if (hasRemoteExcel) { %>
+          <div class="col-12 d-flex flex-wrap align-items-center gap-3">
+            <button type="submit" class="btn btn-primary btn-sm">Validar Excel de SharePoint</button>
+            <details class="small text-muted">
+              <summary>O subir otro archivo .xlsx local</summary>
+              <input type="file" class="form-control form-control-sm mt-2" id="excelValidateFile" name="excelFile" accept=".xlsx">
+            </details>
+          </div>
+        <% } else { %>
+          <div class="col-md-8">
+            <label for="excelValidateFile" class="form-label">Archivo Excel (.xlsx)</label>
+            <input type="file" class="form-control" id="excelValidateFile" name="excelFile" accept=".xlsx" required>
+          </div>
+          <div class="col-md-4">
+            <button type="submit" class="btn btn-primary">Validar archivo</button>
+          </div>
+        <% } %>
+      </form>
+
+      <% if (typeof validationResult !== 'undefined' && validationResult) { %>
+        <hr class="my-4">
+        <% if (validationResult.totalIssues === 0) { %>
+          <div class="alert alert-success mb-0" role="status">
+            Validación correcta: no se han encontrado incidencias en la hoja <code>ACTIVOS</code>.
+          </div>
+        <% } else { %>
+          <div class="alert alert-warning" role="status">
+            Se han detectado <strong><%= validationResult.totalIssues %></strong> <%= validationResult.totalIssues === 1 ? 'incidencia' : 'incidencias' %> en la hoja <code>ACTIVOS</code>.
+          </div>
+          <%
+            const rawByRule = validationResult.byRule;
+            const ruleGroups = Array.isArray(rawByRule)
+              ? rawByRule.map(function(g) { return [g.label || g.rule || g.name || 'Incidencias', g.issues || g.items || []]; })
+              : (rawByRule && typeof rawByRule === 'object' ? Object.entries(rawByRule) : []);
+          %>
+          <% ruleGroups.forEach(function([ruleTitle, issues]) { %>
+            <% if (Array.isArray(issues) && issues.length > 0) { %>
+              <h3 class="h6 mt-3 mb-2">
+                <%= ruleTitle %>
+                <span class="badge bg-warning text-dark ms-1"><%= issues.length %></span>
+              </h3>
+              <div class="table-responsive mb-3">
+                <table class="table table-sm align-middle mb-0">
+                  <thead>
+                    <tr>
+                      <th>Fila</th>
+                      <th>Persona</th>
+                      <th>Columna</th>
+                      <th>Valor</th>
+                      <th>Detalle</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <% issues.forEach(function(issue) { %>
+                      <tr>
+                        <td class="text-nowrap"><%= issue.row || '—' %></td>
+                        <td><%= issue.worker || '—' %></td>
+                        <td class="text-nowrap"><code><%= issue.column || '—' %></code></td>
+                        <td class="small text-muted"><%= issue.value || '—' %></td>
+                        <td class="small"><%= issue.message || '—' %></td>
+                      </tr>
+                    <% }); %>
+                  </tbody>
+                </table>
+              </div>
+            <% } %>
+          <% }); %>
+        <% } %>
+      <% } %>
+    </div>
+  </div>
+
+  <!-- 2. Comprobar sincronización y bajas -->
+  <div class="card shadow-sm border-0 app-panel mb-4">
+    <div class="card-body p-4">
+      <h2 class="h5 mb-2">2. Comprobar sincronización y bajas</h2>
+      <p class="text-muted small mb-3">
+        Compara las hojas <code>ACTIVOS</code> y <code>CONCEJALES</code> con las cuentas activas de Microsoft 365 para detectar altas pendientes, bajas aún habilitadas y cuentas solo en la nube.
+      </p>
+      <form action="/admin/usuarios/excel/sync" method="POST" enctype="multipart/form-data" class="row g-3 align-items-end">
+        <input type="hidden" name="_csrf" value="<%= csrfToken() %>">
+        <% if (hasRemoteExcel) { %>
+          <div class="col-12 d-flex flex-wrap align-items-center gap-3">
+            <button type="submit" class="btn btn-primary btn-sm">Comprobar sincronización con SharePoint</button>
+            <details class="small text-muted">
+              <summary>O subir otro archivo .xlsx local</summary>
+              <input type="file" class="form-control form-control-sm mt-2" id="excelSyncFile" name="excelFile" accept=".xlsx">
+            </details>
+          </div>
+        <% } else { %>
+          <div class="col-md-8">
+            <label for="excelSyncFile" class="form-label">Archivo Excel (.xlsx)</label>
+            <input type="file" class="form-control" id="excelSyncFile" name="excelFile" accept=".xlsx" required>
+          </div>
+          <div class="col-md-4">
+            <button type="submit" class="btn btn-primary">Comprobar sincronización</button>
+          </div>
+        <% } %>
+      </form>
+
+      <% if (typeof syncResult !== 'undefined' && syncResult) { %>
+        <%
+          const missing = Array.isArray(syncResult.missing) ? syncResult.missing : [];
+          const noEmail = Array.isArray(syncResult.noEmail) ? syncResult.noEmail : [];
+          const notDisabled = Array.isArray(syncResult.notDisabled) ? syncResult.notDisabled : [];
+          const cloudOnly = Array.isArray(syncResult.cloudOnly) ? syncResult.cloudOnly : [];
+          const specialFound = Array.isArray(syncResult.specialFound) ? syncResult.specialFound : [];
+          const licSummary = syncResult.licenseSummary;
+          const licEntries = Array.isArray(licSummary)
+            ? licSummary.map(function(x) { return [labelForSku(x), x.count]; })
+            : (licSummary && typeof licSummary === 'object' ? Object.entries(licSummary).map(function([k, v]) { return [labelForSku(k), v]; }) : []);
+        %>
+        <hr class="my-4">
+        <div class="d-flex flex-wrap gap-2 mb-4">
+          <span class="badge bg-<%= missing.length > 0 ? 'warning text-dark' : 'success' %>">Sin cuenta en M365: <%= missing.length %></span>
+          <span class="badge bg-<%= noEmail.length > 0 ? 'warning text-dark' : 'success' %>">Sin correo en Excel: <%= noEmail.length %></span>
+          <span class="badge bg-<%= notDisabled.length > 0 ? 'danger' : 'success' %>">Bajas aún habilitadas: <%= notDisabled.length %></span>
+          <span class="badge bg-<%= cloudOnly.length > 0 ? 'warning text-dark' : 'success' %>">Solo en M365: <%= cloudOnly.length %></span>
+          <% if (specialFound.length > 0) { %>
+            <span class="badge bg-secondary">Cuentas especiales: <%= specialFound.length %></span>
+          <% } %>
+        </div>
+
+        <!-- Check 1a -->
+        <h3 class="h6 mb-2">Activos en Excel sin cuenta activa en M365 <span class="badge bg-secondary"><%= missing.length %></span></h3>
+        <% if (missing.length === 0) { %>
+          <p class="text-muted small mb-4">Ninguno.</p>
+        <% } else { %>
+          <div class="table-responsive mb-4">
+            <table class="table table-sm align-middle mb-0">
+              <thead>
+                <tr>
+                  <th>Persona</th>
+                  <th>Correo en Excel</th>
+                  <th>Hoja / Fila</th>
+                  <th>Detalle</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% missing.forEach(function(item) { %>
+                  <tr>
+                    <td><%= item.name || item.displayName || item.worker || '—' %></td>
+                    <td class="small"><%= item.email || item.upn || '—' %></td>
+                    <td class="small text-muted"><%= [item.sheet, item.row ? ('fila ' + item.row) : ''].filter(Boolean).join(' · ') || '—' %></td>
+                    <td class="small text-muted"><%= item.reason || item.status || item.department || '—' %></td>
+                  </tr>
+                <% }); %>
+              </tbody>
+            </table>
+          </div>
+        <% } %>
+
+        <!-- Check 1b -->
+        <h3 class="h6 mb-2">Activos en Excel sin correo corporativo <span class="badge bg-secondary"><%= noEmail.length %></span></h3>
+        <% if (noEmail.length === 0) { %>
+          <p class="text-muted small mb-4">Ninguno.</p>
+        <% } else { %>
+          <div class="table-responsive mb-4">
+            <table class="table table-sm align-middle mb-0">
+              <thead>
+                <tr>
+                  <th>Persona</th>
+                  <th>Hoja / Fila</th>
+                  <th>Departamento / Puesto</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% noEmail.forEach(function(item) { %>
+                  <tr>
+                    <td><%= item.name || item.displayName || item.worker || '—' %></td>
+                    <td class="small text-muted"><%= [item.sheet, item.row ? ('fila ' + item.row) : ''].filter(Boolean).join(' · ') || '—' %></td>
+                    <td class="small text-muted"><%= [item.department, item.jobTitle].filter(Boolean).join(' · ') || '—' %></td>
+                  </tr>
+                <% }); %>
+              </tbody>
+            </table>
+          </div>
+        <% } %>
+
+        <!-- Check 2 -->
+        <h3 class="h6 mb-2">Bajas efectivas que siguen habilitadas en M365 <span class="badge bg-<%= notDisabled.length > 0 ? 'danger' : 'secondary' %>"><%= notDisabled.length %></span></h3>
+        <% if (notDisabled.length === 0) { %>
+          <p class="text-muted small mb-4">Ninguna baja pendiente de deshabilitar.</p>
+        <% } else { %>
+          <% if (licEntries.length > 0) { %>
+            <div class="alert alert-info small mb-3">
+              <strong>Licencias que se liberarían en total:</strong>
+              <%= licEntries.map(function([name, count]) { return name + ' (' + count + ')'; }).join(' · ') %>
+            </div>
+          <% } %>
+          <form
+            action="/admin/usuarios/excel/deshabilitar"
+            method="POST"
+            class="mb-4"
+            data-confirm="Se retirarán todas las licencias y después se deshabilitarán las cuentas seleccionadas. ¿Continuar?"
+          >
+            <input type="hidden" name="_csrf" value="<%= csrfToken() %>">
+            <div class="table-responsive mb-3">
+              <table class="table table-sm align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th style="width: 2rem;">
+                      <input type="checkbox" class="form-check-input" data-check-all=".disable-user-cb" aria-label="Seleccionar todas las cuentas" checked>
+                    </th>
+                    <th>Persona</th>
+                    <th>Correo / Usuario</th>
+                    <th>Fecha de baja</th>
+                    <th>Licencias actuales</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% notDisabled.forEach(function(item) { %>
+                    <% const itemLics = Array.isArray(item.licenses) ? item.licenses : []; %>
+                    <tr>
+                      <td>
+                        <input
+                          type="checkbox"
+                          class="form-check-input disable-user-cb"
+                          name="userIds"
+                          value="<%= item.userId %>"
+                          aria-label="Seleccionar a <%= item.name || item.displayName || item.email || item.userId %>"
+                          checked
+                        >
+                      </td>
+                      <td><strong><%= item.name || item.displayName || item.worker || '—' %></strong></td>
+                      <td class="small text-muted"><%= item.email || item.upn || item.userPrincipalName || '—' %></td>
+                      <td class="small text-nowrap"><%= item.fechaBaja || '—' %></td>
+                      <td>
+                        <% if (itemLics.length === 0) { %>
+                          <span class="text-muted small">Sin licencias</span>
+                        <% } else { %>
+                          <div class="d-flex flex-wrap gap-1">
+                            <% itemLics.forEach(function(lic) { %>
+                              <span class="badge bg-secondary fw-normal"><%= labelForSku(lic) %></span>
+                            <% }); %>
+                          </div>
+                        <% } %>
+                      </td>
+                    </tr>
+                  <% }); %>
+                </tbody>
+              </table>
+            </div>
+            <button type="submit" class="btn btn-danger">Retirar licencias y deshabilitar seleccionadas</button>
+          </form>
+        <% } %>
+
+        <!-- Check 3 -->
+        <h3 class="h6 mb-2">Cuentas activas en M365 ausentes del Excel <span class="badge bg-secondary"><%= cloudOnly.length %></span></h3>
+        <% if (cloudOnly.length === 0) { %>
+          <p class="text-muted small mb-3">Ninguna.</p>
+        <% } else { %>
+          <div class="table-responsive mb-3">
+            <table class="table table-sm align-middle mb-0">
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>Usuario / Correo</th>
+                  <th>Puesto / Departamento</th>
+                  <th>Licencias</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% cloudOnly.forEach(function(item) { %>
+                  <% const cLics = Array.isArray(item.licenses) ? item.licenses : []; %>
+                  <tr>
+                    <td>
+                      <% if (item.id || item.userId) { %>
+                        <a href="/admin/usuarios/<%= encodeURIComponent(item.id || item.userId) %>" class="text-decoration-none fw-semibold"><%= item.displayName || item.name || '—' %></a>
+                      <% } else { %>
+                        <%= item.displayName || item.name || '—' %>
+                      <% } %>
+                    </td>
+                    <td class="small text-muted"><%= item.userPrincipalName || item.email || item.upn || '—' %></td>
+                    <td class="small text-muted"><%= [item.jobTitle, item.department].filter(Boolean).join(' · ') || '—' %></td>
+                    <td>
+                      <% if (cLics.length === 0) { %>
+                        <span class="text-muted small">—</span>
+                      <% } else { %>
+                        <div class="d-flex flex-wrap gap-1">
+                          <% cLics.forEach(function(lic) { %>
+                            <span class="badge bg-secondary fw-normal"><%= labelForSku(lic) %></span>
+                          <% }); %>
+                        </div>
+                      <% } %>
+                    </td>
+                  </tr>
+                <% }); %>
+              </tbody>
+            </table>
+          </div>
+        <% } %>
+
+        <% if (specialFound.length > 0) { %>
+          <div class="alert alert-light border small mb-0">
+            <strong>Cuentas especiales conocidas (<%= specialFound.length %>, informativas; no cuentan como error):</strong>
+            <ul class="mb-0 mt-1">
+              <% specialFound.forEach(function(sp) { %>
+                <li>
+                  <%= typeof sp === 'string' ? sp : (sp.displayName || sp.name || sp.upn || sp.userPrincipalName || sp.email) %>
+                  <% if (typeof sp === 'object' && (sp.userPrincipalName || sp.email || sp.upn)) { %>
+                    <span class="text-muted">(<%= sp.userPrincipalName || sp.email || sp.upn %>)</span>
+                  <% } %>
+                </li>
+              <% }); %>
+            </ul>
+          </div>
+        <% } %>
+      <% } %>
+
+      <% if (typeof disableResult !== 'undefined' && disableResult) { %>
+        <%
+          const disableRows = Array.isArray(disableResult)
+            ? disableResult
+            : (Array.isArray(disableResult.results) ? disableResult.results : []);
+        %>
+        <hr class="my-4">
+        <h3 class="h6 mb-2">Resultado de la baja de cuentas</h3>
+        <% if (disableRows.length > 0) { %>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead>
+                <tr>
+                  <th>Cuenta</th>
+                  <th>Estado</th>
+                  <th>Detalle</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% disableRows.forEach(function(r) { %>
+                  <% const isOk = r.ok === true || r.success === true || (!r.error && r.ok !== false && r.success !== false); %>
+                  <tr>
+                    <td>
+                      <strong><%= r.displayName || r.name || r.userId || '—' %></strong>
+                      <% if (r.upn || r.email || r.userPrincipalName) { %>
+                        <span class="text-muted small">(<%= r.upn || r.email || r.userPrincipalName %>)</span>
+                      <% } %>
+                    </td>
+                    <td>
+                      <% if (isOk) { %>
+                        <span class="badge bg-success">Deshabilitada</span>
+                      <% } else { %>
+                        <span class="badge bg-danger">Error</span>
+                      <% } %>
+                    </td>
+                    <td class="small">
+                      <% if (isOk) { %>
+                        <%= typeof r.licensesRemoved === 'number' ? (r.licensesRemoved + ' licencias retiradas') : (r.message || 'Licencias retiradas y cuenta deshabilitada.') %>
+                      <% } else { %>
+                        <span class="text-danger"><%= r.error || 'No se pudo completar la operación.' %></span>
+                      <% } %>
+                    </td>
+                  </tr>
+                <% }); %>
+              </tbody>
+            </table>
+          </div>
+        <% } else { %>
+          <div class="alert alert-info mb-0">
+            Operación finalizada.
+            <% if (typeof disableResult.disabled === 'number') { %>Deshabilitadas: <%= disableResult.disabled %>.<% } %>
+            <% if (typeof disableResult.failed === 'number' && disableResult.failed > 0) { %> Errores: <%= disableResult.failed %>.<% } %>
+          </div>
+        <% } %>
+      <% } %>
+    </div>
+  </div>
+
+  <!-- 3. Importar usuarios desde Excel (con vista previa) -->
+  <div class="card shadow-sm border-0 app-panel">
+    <div class="card-body p-4">
+      <h2 class="h5 mb-2">3. Importar usuarios desde Excel (con vista previa)</h2>
+      <p class="text-muted small mb-3">
+        Primero analiza el archivo y muestra qué cuentas se crearían o actualizarían. No se realiza ningún cambio en Microsoft 365 hasta confirmar el plan.
+      </p>
+      <form action="/admin/usuarios/excel/importar/preview" method="POST" enctype="multipart/form-data" class="row g-3 align-items-end">
+        <input type="hidden" name="_csrf" value="<%= csrfToken() %>">
+        <% if (hasRemoteExcel) { %>
+          <div class="col-md-4">
+            <label for="importLimit" class="form-label">Límite de filas (opcional)</label>
+            <input type="number" class="form-control" id="importLimit" name="limit" min="1" placeholder="Sin límite">
+          </div>
+          <div class="col-md-8 d-flex flex-wrap align-items-center gap-3">
+            <button type="submit" class="btn btn-primary">Generar vista previa desde SharePoint</button>
+            <details class="small text-muted">
+              <summary>O subir otro archivo .xlsx local</summary>
+              <input type="file" class="form-control form-control-sm mt-2" id="excelImportFile" name="excelFile" accept=".xlsx">
+            </details>
+          </div>
+        <% } else { %>
+          <div class="col-md-6">
+            <label for="excelImportFile" class="form-label">Archivo Excel (.xlsx)</label>
+            <input type="file" class="form-control" id="excelImportFile" name="excelFile" accept=".xlsx" required>
+          </div>
+          <div class="col-md-3">
+            <label for="importLimit" class="form-label">Límite de filas (opcional)</label>
+            <input type="number" class="form-control" id="importLimit" name="limit" min="1" placeholder="Sin límite">
+          </div>
+          <div class="col-md-3">
+            <button type="submit" class="btn btn-primary">Generar vista previa</button>
+          </div>
+        <% } %>
+        <div class="col-12">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="skipLeaving" name="skipLeaving" value="true" checked>
+            <label class="form-check-label" for="skipLeaving">Omitir personas con Fecha de Baja ya efectiva</label>
+          </div>
+        </div>
+      </form>
+
+      <% if (typeof importPreview !== 'undefined' && importPreview && importPreview.plan) { %>
+        <%
+          const plan = importPreview.plan;
+          const items = Array.isArray(plan.items) ? plan.items : [];
+          const invalidRows = Array.isArray(importPreview.invalidRows)
+            ? importPreview.invalidRows
+            : (Array.isArray(plan.invalidRows) ? plan.invalidRows : (Array.isArray(plan.errors) ? plan.errors : []));
+          const countAction = function(kind) {
+            return items.filter(function(it) { return (it.action || '').toLowerCase() === kind; }).length;
+          };
+          const summary = plan.summary || importPreview.summary || {};
+          const toCreate = typeof summary.create === 'number' ? summary.create : (typeof summary.created === 'number' ? summary.created : countAction('create'));
+          const toUpdate = typeof summary.update === 'number' ? summary.update : (typeof summary.updated === 'number' ? summary.updated : countAction('update'));
+          const unchanged = typeof summary.unchanged === 'number' ? summary.unchanged : (typeof summary.noop === 'number' ? summary.noop : (countAction('unchanged') + countAction('noop') + countAction('skip')));
+          const skippedLeaving = typeof summary.skippedLeaving === 'number' ? summary.skippedLeaving : (typeof plan.skippedLeaving === 'number' ? plan.skippedLeaving : (Array.isArray(plan.skippedLeaving) ? plan.skippedLeaving.length : 0));
+          const errCount = typeof summary.errors === 'number' ? summary.errors : invalidRows.length;
+        %>
+        <hr class="my-4">
+        <h3 class="h6 mb-3">Vista previa de la importación</h3>
+        <div class="d-flex flex-wrap gap-2 mb-3">
+          <span class="badge bg-success">Crear: <%= toCreate %></span>
+          <span class="badge bg-warning text-dark">Actualizar: <%= toUpdate %></span>
+          <span class="badge bg-secondary">Sin cambios: <%= unchanged %></span>
+          <span class="badge bg-<%= errCount > 0 ? 'danger' : 'secondary' %>">Errores: <%= errCount %></span>
+          <span class="badge bg-light text-dark border">Bajas omitidas: <%= skippedLeaving %></span>
+        </div>
+
+        <% if (invalidRows.length > 0) { %>
+          <div class="alert alert-warning">
+            <strong>Filas con errores (no se importarán):</strong>
+            <div class="table-responsive mt-2">
+              <table class="table table-sm align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th>Fila</th>
+                    <th>Persona</th>
+                    <th>Motivo</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% invalidRows.forEach(function(inv) { %>
+                    <tr>
+                      <td><%= inv.row || '—' %></td>
+                      <td><%= inv.worker || inv.name || inv.displayName || '—' %></td>
+                      <td class="small"><%= inv.error || inv.message || (Array.isArray(inv.errors) ? inv.errors.join('; ') : '—') %></td>
+                    </tr>
+                  <% }); %>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        <% } %>
+
+        <% if (items.length > 0) { %>
+          <div class="table-responsive mb-3">
+            <table class="table table-sm align-middle mb-0">
+              <thead>
+                <tr>
+                  <th>Acción</th>
+                  <th>Persona</th>
+                  <th>Usuario / Correo</th>
+                  <th>Cambios previstos</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% items.forEach(function(item) { %>
+                  <%
+                    const act = (item.action || '').toLowerCase();
+                    const isCreate = act === 'create';
+                    const isUpdate = act === 'update';
+                    const badgeClass = isCreate ? 'bg-success' : (isUpdate ? 'bg-warning text-dark' : 'bg-secondary');
+                    const badgeLabel = isCreate ? 'CREAR' : (isUpdate ? 'ACTUALIZAR' : 'SIN CAMBIOS');
+                    const diffs = Array.isArray(item.diffs) ? item.diffs : [];
+                  %>
+                  <tr>
+                    <td class="text-nowrap"><span class="badge <%= badgeClass %>"><%= badgeLabel %></span></td>
+                    <td><%= item.displayName || (item.desired && item.desired.displayName) || item.name || '—' %></td>
+                    <td class="small text-muted"><%= item.upn || item.userPrincipalName || (item.desired && item.desired.userPrincipalName) || item.email || '—' %></td>
+                    <td class="small">
+                      <% if (diffs.length > 0) { %>
+                        <ul class="mb-0 ps-3">
+                          <% diffs.forEach(function(d) { %>
+                            <li><code><%= d.field %></code>: <%= (d.from !== undefined && d.from !== null && d.from !== '') ? d.from : '—' %> &rarr; <strong><%= (d.to !== undefined && d.to !== null && d.to !== '') ? d.to : '—' %></strong></li>
+                          <% }); %>
+                        </ul>
+                      <% } else if (isCreate) { %>
+                        <span class="text-muted">Nueva cuenta en Microsoft 365</span>
+                      <% } else { %>
+                        <span class="text-muted">Sin cambios</span>
+                      <% } %>
+                    </td>
+                  </tr>
+                <% }); %>
+              </tbody>
+            </table>
+          </div>
+        <% } %>
+
+        <% if (importPreview.planId) { %>
+          <form
+            action="/admin/usuarios/excel/importar/aplicar"
+            method="POST"
+            data-confirm="¿Aplicar esta importación en Microsoft 365?"
+          >
+            <input type="hidden" name="_csrf" value="<%= csrfToken() %>">
+            <input type="hidden" name="planId" value="<%= importPreview.planId %>">
+            <button type="submit" class="btn btn-primary">Aplicar cambios en Microsoft 365</button>
+          </form>
+        <% } %>
+      <% } %>
+
+      <% if (typeof importResult !== 'undefined' && importResult) { %>
+        <%
+          const createdUsers = Array.isArray(importResult.createdUsers)
+            ? importResult.createdUsers
+            : (Array.isArray(importResult.created) ? importResult.created : []);
+          const createdCount = typeof importResult.createdCount === 'number'
+            ? importResult.createdCount
+            : (typeof importResult.created === 'number' ? importResult.created : createdUsers.length);
+          const updatedCount = typeof importResult.updatedCount === 'number'
+            ? importResult.updatedCount
+            : (typeof importResult.updated === 'number' ? importResult.updated : (Array.isArray(importResult.updated) ? importResult.updated.length : 0));
+          const unchangedCount = typeof importResult.unchanged === 'number'
+            ? importResult.unchanged
+            : (typeof importResult.skipped === 'number' ? importResult.skipped : 0);
+          const importErrors = Array.isArray(importResult.errors) ? importResult.errors : [];
+          const managerErrors = Array.isArray(importResult.managerErrors) ? importResult.managerErrors : [];
+          const unlicensed = Array.isArray(importResult.unlicensed) ? importResult.unlicensed : (Array.isArray(importResult.warnings) ? importResult.warnings : []);
+        %>
+        <hr class="my-4">
+        <h3 class="h6 mb-3">Resultado de la importación</h3>
+        <div class="d-flex flex-wrap gap-2 mb-3">
+          <span class="badge bg-success">Creados: <%= createdCount %></span>
+          <span class="badge bg-primary">Actualizados: <%= updatedCount %></span>
+          <span class="badge bg-secondary">Sin cambios: <%= unchangedCount %></span>
+          <span class="badge bg-<%= importErrors.length > 0 ? 'danger' : 'secondary' %>">Errores: <%= importErrors.length %></span>
+          <span class="badge bg-<%= managerErrors.length > 0 ? 'warning text-dark' : 'secondary' %>">Errores de responsable: <%= managerErrors.length %></span>
+        </div>
+
+        <% if (createdUsers.length > 0) { %>
+          <div class="alert alert-success">
+            <h4 class="h6 alert-heading">Cuentas creadas — contraseñas temporales (se muestran una sola vez)</h4>
+            <div class="table-responsive mt-2">
+              <table class="table table-sm align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th>Persona</th>
+                    <th>Usuario</th>
+                    <th>Contraseña temporal</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% createdUsers.forEach(function(cu, idx) { %>
+                    <tr>
+                      <td><%= cu.displayName || cu.name || '—' %></td>
+                      <td class="small"><%= cu.upn || cu.userPrincipalName || cu.email || '—' %></td>
+                      <td>
+                        <code id="createdPwd-<%= idx %>" class="user-select-all"><%= cu.password || cu.tempPassword || '—' %></code>
+                      </td>
+                      <td class="text-end">
+                        <% if (cu.password || cu.tempPassword) { %>
+                          <button type="button" class="btn btn-outline-success btn-sm" data-copy-target="#createdPwd-<%= idx %>">Copiar</button>
+                        <% } %>
+                      </td>
+                    </tr>
+                  <% }); %>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        <% } %>
+
+        <% if (unlicensed.length > 0) { %>
+          <div class="alert alert-warning small">
+            <strong>Avisos (cuentas sin licencia asignada automáticamente):</strong>
+            <ul class="mb-0 mt-1">
+              <% unlicensed.forEach(function(w) { %>
+                <li><%= typeof w === 'string' ? w : ((w.displayName || w.upn || w.userPrincipalName || 'Cuenta') + (w.message ? ': ' + w.message : '')) %></li>
+              <% }); %>
+            </ul>
+          </div>
+        <% } %>
+
+        <% if (importErrors.length > 0) { %>
+          <div class="alert alert-danger small">
+            <strong>Errores durante la importación:</strong>
+            <ul class="mb-0 mt-1">
+              <% importErrors.forEach(function(e) { %>
+                <li><%= typeof e === 'string' ? e : ((e.displayName || e.upn || e.userPrincipalName || e.worker || 'Fila') + ': ' + (e.error || e.message || 'Error desconocido')) %></li>
+              <% }); %>
+            </ul>
+          </div>
+        <% } %>
+
+        <% if (managerErrors.length > 0) { %>
+          <div class="alert alert-warning small mb-0">
+            <strong>Errores al asignar responsables:</strong>
+            <ul class="mb-0 mt-1">
+              <% managerErrors.forEach(function(e) { %>
+                <li><%= typeof e === 'string' ? e : ((e.displayName || e.upn || e.userPrincipalName || 'Usuario') + ': ' + (e.error || e.message || 'No se pudo asignar el responsable')) %></li>
+              <% }); %>
+            </ul>
+          </div>
+        <% } %>
+      <% } %>
+    </div>
+  </div>
+</main>
+
+<%- include('partials/footer') %>

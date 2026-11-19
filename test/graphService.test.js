@@ -49,6 +49,22 @@ test.serial('getUserPhoto returns null when there is no photo or Graph fails', a
   t.is(await graph.getUserPhoto('token'), null);
 });
 
+test.serial('getUserPhotoById fetches another user photo and returns null when missing or unreadable', async t => {
+  t.is(await graph.getUserPhotoById('token', ''), null);
+  t.is(http.calls.length, 0);
+
+  http.on('get', '/users/u1/photo/$value', Buffer.from('png-bytes'));
+  const photo = await graph.getUserPhotoById('token', 'u1');
+  t.true(Buffer.isBuffer(photo));
+  t.is(photo.toString(), 'png-bytes');
+  t.is(http.calls[0].config.responseType, 'arraybuffer');
+
+  t.is(await graph.getUserPhotoById('token', 'missing'), null);
+
+  http.fail('get', '/users/u2/photo/$value', 500);
+  t.is(await graph.getUserPhotoById('token', 'u2'), null);
+});
+
 test.serial('getUserManager returns null when no manager is assigned', async t => {
   t.is(await graph.getUserManager('token'), null);
 
@@ -71,6 +87,21 @@ test.serial('getAllUsers requests a sorted page of users and returns [] on failu
 
   http.fail('get', '/v1.0/users', 500);
   t.deepEqual(await graph.getAllUsers('token'), []);
+});
+
+test.serial('getLicensedUsers keeps only active licensed members and strips license metadata', async t => {
+  http.on('get', '/v1.0/users', {
+    value: [
+      { id: 'u1', displayName: 'Ana', accountEnabled: true, userType: 'Member', assignedLicenses: [{ skuId: 'sku-1' }] },
+      { id: 'u2', displayName: 'Sala', accountEnabled: false, userType: 'Member', assignedLicenses: [] },
+      { id: 'u3', displayName: 'Buzón', accountEnabled: true, userType: 'Member', assignedLicenses: [] },
+      { id: 'u4', displayName: 'Deshabilitado', accountEnabled: false, userType: 'Member', assignedLicenses: [{ skuId: 'sku-1' }] },
+      { id: 'u5', displayName: 'Invitado', accountEnabled: true, userType: 'Guest', assignedLicenses: [{ skuId: 'sku-1' }] },
+    ],
+  });
+
+  t.deepEqual(await graph.getLicensedUsers('token'), [{ id: 'u1', displayName: 'Ana' }]);
+  t.true(http.calls[0].config.params.$select.includes('assignedLicenses'));
 });
 
 test.serial('getAllUsers follows @odata.nextLink until the last page', async t => {
@@ -394,4 +425,351 @@ test.serial('getServicePrincipal and getRooms cache successful lookups', async t
   const secondRooms = await graph.getRooms('token');
   t.deepEqual(firstRooms, secondRooms);
   t.is(http.callsTo('get', '/places/microsoft.graph.room').length, 1);
+});
+
+test.serial('graphBatch splits requests into chunks of 20 and returns a Map keyed by id', async t => {
+  t.deepEqual(await graph.graphBatch('token', []), new Map());
+  t.is(http.calls.length, 0);
+
+  const requests = Array.from({ length: 25 }, (_, i) => ({
+    id: String(i),
+    method: 'GET',
+    url: `/users/u${i}`,
+  }));
+
+  http.on('post', '/v1.0/$batch', (call) => ({
+    responses: call.data.requests.map(r => ({
+      id: r.id,
+      status: 200,
+      body: { id: `u${r.id}` },
+    })),
+  }));
+
+  const results = await graph.graphBatch('token', requests);
+
+  t.is(http.calls.length, 2);
+  t.is(http.calls[0].data.requests.length, 20);
+  t.is(http.calls[1].data.requests.length, 5);
+  t.is(results.size, 25);
+  t.deepEqual(results.get('0'), { status: 200, body: { id: 'u0' } });
+  t.deepEqual(results.get('24'), { status: 200, body: { id: 'u24' } });
+});
+
+test.serial('graphBatch throws graphError when a chunk request fails', async t => {
+  http.fail('post', '/v1.0/$batch', 503);
+
+  const error = await t.throwsAsync(
+    () => graph.graphBatch('token', [{ id: '0', method: 'GET', url: '/users/u1' }]),
+    { message: 'Failed to execute batch request' }
+  );
+  t.is(error.graphStatus, 503);
+});
+
+test.serial('listAdminUsers filters out #EXT# users and applies accountEnabled filter modes', async t => {
+  http.on('get', '/v1.0/users', {
+    value: [
+      { id: 'u1', userPrincipalName: 'alice@example.test', accountEnabled: true },
+      { id: 'u2', userPrincipalName: 'guest_partner#EXT#@example.onmicrosoft.com', accountEnabled: true },
+      { id: 'u3', userPrincipalName: 'other_guest#ext#@example.onmicrosoft.com', accountEnabled: true },
+    ],
+  });
+
+  const active = await graph.listAdminUsers('token');
+  t.deepEqual(active.users.map(u => u.id), ['u1']);
+  t.false(active.signInsKnown);
+  t.is(http.calls[0].config.params.$filter, 'accountEnabled eq true');
+  t.is(http.calls[0].config.params.$top, 999);
+
+  await graph.listAdminUsers('token', { onlyDisabled: true });
+  t.is(http.calls[1].config.params.$filter, 'accountEnabled eq false');
+
+  await graph.listAdminUsers('token', { onlyDisabled: null });
+  t.is(http.calls[2].config.params.$filter, undefined);
+});
+
+test.serial('listAdminUsers merges signInActivity with appToken and falls back on failure', async t => {
+  http.on('get', '/v1.0/users', (call) => {
+    if (call.config.params.$select === 'id,signInActivity') {
+      return {
+        value: [
+          { id: 'u1', signInActivity: { lastSignInDateTime: '2026-10-01T10:00:00Z' } },
+        ],
+      };
+    }
+    return {
+      value: [
+        { id: 'u1', userPrincipalName: 'alice@example.test' },
+        { id: 'u2', userPrincipalName: 'bob@example.test' },
+      ],
+    };
+  });
+
+  const ok = await graph.listAdminUsers('user-token', { includeSignInActivity: true, appToken: 'app-token' });
+  t.true(ok.signInsKnown);
+  t.deepEqual(ok.users[0].signInActivity, { lastSignInDateTime: '2026-10-01T10:00:00Z' });
+  t.is(ok.users[1].signInActivity, undefined);
+  t.is(http.calls[1].config.headers.Authorization, 'Bearer app-token');
+  t.is(http.calls[1].config.params.$top, 500);
+
+  http.on('get', '/v1.0/users', (call) => {
+    if (call.config.params.$select === 'id,signInActivity') {
+      const error = new Error('Forbidden');
+      error.response = { status: 403, data: { error: { code: 'Authorization_RequestDenied' } } };
+      throw error;
+    }
+    return { value: [{ id: 'u1', userPrincipalName: 'alice@example.test' }] };
+  });
+
+  const fallback = await graph.listAdminUsers('user-token', { includeSignInActivity: true, appToken: 'app-token' });
+  t.false(fallback.signInsKnown);
+  t.deepEqual(fallback.users.map(u => u.id), ['u1']);
+});
+
+test.serial('fetchManagersBatch, fetchUserGroupsBatch and fetchUserLicensesBatch map batch responses', async t => {
+  http.on('post', '/v1.0/$batch', (call) => ({
+    responses: call.data.requests.map(req => {
+      if (req.url.includes('/u1/manager')) {
+        return { id: req.id, status: 200, body: { id: 'm1', displayName: 'Boss', userPrincipalName: 'boss@example.test', extra: 'x' } };
+      }
+      if (req.url.includes('/u2/manager')) {
+        return { id: req.id, status: 404, body: { error: { code: 'Request_ResourceNotFound' } } };
+      }
+      if (req.url.includes('/u1/memberOf/')) {
+        return { id: req.id, status: 200, body: { value: [{ id: 'g1', displayName: 'IT', extra: 1 }] } };
+      }
+      if (req.url.includes('/u2/memberOf/')) {
+        return { id: req.id, status: 403, body: {} };
+      }
+      if (req.url.includes('/u1/licenseDetails')) {
+        return { id: req.id, status: 200, body: { value: [{ skuId: 's1', skuPartNumber: 'SPE_E3', extra: 1 }] } };
+      }
+      return { id: req.id, status: 500, body: {} };
+    }),
+  }));
+
+  const managers = await graph.fetchManagersBatch('token', ['u1', 'u2']);
+  t.deepEqual(managers.get('u1'), { id: 'm1', displayName: 'Boss', userPrincipalName: 'boss@example.test' });
+  t.is(managers.get('u2'), null);
+
+  const groups = await graph.fetchUserGroupsBatch('token', ['u1', 'u2']);
+  t.deepEqual(groups.get('u1'), [{ id: 'g1', displayName: 'IT' }]);
+  t.deepEqual(groups.get('u2'), []);
+
+  const licenses = await graph.fetchUserLicensesBatch('token', ['u1', 'u2']);
+  t.deepEqual(licenses.get('u1'), [{ skuId: 's1', skuPartNumber: 'SPE_E3' }]);
+  t.deepEqual(licenses.get('u2'), []);
+});
+
+test.serial('getAdminUser returns user, null on 404, and throws on other errors', async t => {
+  http.on('get', '/users/u1', { id: 'u1', displayName: 'Alice', mailNickname: 'alice' });
+
+  const user = await graph.getAdminUser('token', 'u1');
+  t.deepEqual(user, { id: 'u1', displayName: 'Alice', mailNickname: 'alice' });
+  t.true(http.calls[0].config.params.$select.includes('mailNickname'));
+  t.true(http.calls[0].config.params.$select.includes('assignedLicenses'));
+
+  t.is(await graph.getAdminUser('token', 'missing'), null);
+
+  http.fail('get', '/users/u1', 500);
+  const error = await t.throwsAsync(() => graph.getAdminUser('token', 'u1'), { message: 'Failed to fetch admin user' });
+  t.is(error.graphStatus, 500);
+});
+
+test.serial('getUserManagerById, getUserGroupsById and getUserLicensesById handle success and errors', async t => {
+  http.on('get', '/users/u1/manager', { id: 'm1', displayName: 'Boss' });
+  t.deepEqual(await graph.getUserManagerById('token', 'u1'), { id: 'm1', displayName: 'Boss' });
+  t.is(await graph.getUserManagerById('token', 'missing'), null);
+  http.fail('get', '/users/u1/manager', 500);
+  t.is(await graph.getUserManagerById('token', 'u1'), null);
+
+  http.on('get', '/users/u1/memberOf/microsoft.graph.group', {
+    value: [{ id: 'g1', displayName: 'One' }],
+    '@odata.nextLink': 'https://graph.microsoft.com/v1.0/users/u1/memberOf/microsoft.graph.group?$skiptoken=p2',
+  });
+  http.on('get', '$skiptoken=p2', { value: [{ id: 'g2', displayName: 'Two' }] });
+  t.deepEqual(await graph.getUserGroupsById('token', 'u1'), [
+    { id: 'g1', displayName: 'One' },
+    { id: 'g2', displayName: 'Two' },
+  ]);
+  http.fail('get', '/users/u1/memberOf/microsoft.graph.group', 403);
+  t.deepEqual(await graph.getUserGroupsById('token', 'u1'), []);
+
+  http.on('get', '/users/u1/licenseDetails', { value: [{ skuId: 's1', skuPartNumber: 'E3' }] });
+  t.deepEqual(await graph.getUserLicensesById('token', 'u1'), [{ skuId: 's1', skuPartNumber: 'E3' }]);
+  http.fail('get', '/users/u1/licenseDetails', 403);
+  t.deepEqual(await graph.getUserLicensesById('token', 'u1'), []);
+});
+
+test.serial('createAdminUser and updateAdminUser preserve Graph status and message on failure', async t => {
+  http.on('post', '/v1.0/users', { id: 'new-1', displayName: 'New User' });
+  const created = await graph.createAdminUser('token', { displayName: 'New User' });
+  t.deepEqual(created, { id: 'new-1', displayName: 'New User' });
+  t.deepEqual(http.calls[0].data, { displayName: 'New User' });
+
+  http.on('post', '/v1.0/users', () => {
+    const error = new Error('Bad Request');
+    error.response = { status: 400, data: { error: { message: 'UserPrincipalName already exists' } } };
+    throw error;
+  });
+  const createErr = await t.throwsAsync(
+    () => graph.createAdminUser('token', {}),
+    { message: 'Failed to create user' }
+  );
+  t.is(createErr.graphStatus, 400);
+  t.is(createErr.graphMessage, 'UserPrincipalName already exists');
+
+  http.on('patch', '/users/u1', {});
+  await graph.updateAdminUser('token', 'u1', { jobTitle: 'Lead' });
+  t.deepEqual(http.calls.at(-1).data, { jobTitle: 'Lead' });
+
+  http.on('patch', '/users/u1', () => {
+    const error = new Error('Forbidden');
+    error.response = { status: 403, data: { error: { message: 'Insufficient privileges' } } };
+    throw error;
+  });
+  const updateErr = await t.throwsAsync(
+    () => graph.updateAdminUser('token', 'u1', { jobTitle: 'Lead' }),
+    { message: 'Failed to update user' }
+  );
+  t.is(updateErr.graphStatus, 403);
+  t.is(updateErr.graphMessage, 'Insufficient privileges');
+});
+
+test.serial('setUserManager puts the manager @odata.id reference', async t => {
+  http.on('put', '/users/u1/manager/$ref', {});
+
+  await graph.setUserManager('token', 'u1', 'm1');
+  t.deepEqual(http.calls[0].data, { '@odata.id': 'https://graph.microsoft.com/v1.0/users/m1' });
+
+  http.on('put', '/users/u1/manager/$ref', () => {
+    const error = new Error('Bad Request');
+    error.response = { status: 400, data: { error: { message: 'Cannot set self as manager' } } };
+    throw error;
+  });
+  const err = await t.throwsAsync(
+    () => graph.setUserManager('token', 'u1', 'u1'),
+    { message: 'Failed to set user manager' }
+  );
+  t.is(err.graphStatus, 400);
+  t.is(err.graphMessage, 'Cannot set self as manager');
+});
+
+test.serial('removeUserLicenses skips empty lists and posts removeLicenses otherwise', async t => {
+  await graph.removeUserLicenses('token', 'u1', []);
+  await graph.removeUserLicenses('token', 'u1', null);
+  t.is(http.calls.length, 0);
+
+  http.on('post', '/users/u1/assignLicense', {});
+  await graph.removeUserLicenses('token', 'u1', ['sku-1', 'sku-2']);
+  t.deepEqual(http.calls[0].data, { addLicenses: [], removeLicenses: ['sku-1', 'sku-2'] });
+
+  http.on('post', '/users/u1/assignLicense', () => {
+    const error = new Error('Bad Request');
+    error.response = { status: 400, data: { error: { message: 'License inherited from group' } } };
+    throw error;
+  });
+  const err = await t.throwsAsync(
+    () => graph.removeUserLicenses('token', 'u1', ['sku-1']),
+    { message: 'Failed to remove user licenses' }
+  );
+  t.is(err.graphStatus, 400);
+  t.is(err.graphMessage, 'License inherited from group');
+});
+
+test.serial('addUserToGroup and removeUserFromGroup ignore 409/400 already-exist and 404 respectively', async t => {
+  http.on('post', '/groups/g1/members/$ref', {});
+  await graph.addUserToGroup('token', 'g1', 'u1');
+  t.deepEqual(http.calls[0].data, { '@odata.id': 'https://graph.microsoft.com/v1.0/directoryObjects/u1' });
+
+  http.fail('post', '/groups/g1/members/$ref', 409);
+  await t.notThrowsAsync(() => graph.addUserToGroup('token', 'g1', 'u1'));
+
+  http.on('post', '/groups/g1/members/$ref', () => {
+    const error = new Error('Bad Request');
+    error.response = { status: 400, data: { error: { message: 'One or more added object references already exist' } } };
+    throw error;
+  });
+  await t.notThrowsAsync(() => graph.addUserToGroup('token', 'g1', 'u1'));
+
+  http.fail('post', '/groups/g1/members/$ref', 403);
+  const addErr = await t.throwsAsync(
+    () => graph.addUserToGroup('token', 'g1', 'u1'),
+    { message: 'Failed to add user to group' }
+  );
+  t.is(addErr.graphStatus, 403);
+
+  http.on('delete', '/groups/g1/members/u1/$ref', {});
+  await graph.removeUserFromGroup('token', 'g1', 'u1');
+
+  http.fail('delete', '/groups/g1/members/u1/$ref', 404);
+  await t.notThrowsAsync(() => graph.removeUserFromGroup('token', 'g1', 'u1'));
+
+  http.fail('delete', '/groups/g1/members/u1/$ref', 403);
+  const removeErr = await t.throwsAsync(
+    () => graph.removeUserFromGroup('token', 'g1', 'u1'),
+    { message: 'Failed to remove user from group' }
+  );
+  t.is(removeErr.graphStatus, 403);
+});
+
+test.serial('getUserMailboxSettingsAdmin never sends $select and categorizes status codes', async t => {
+  http.on('get', '/users/u1/mailboxSettings', { timeZone: 'Romance Standard Time', automaticRepliesSetting: { status: 'disabled' } });
+  const ok = await graph.getUserMailboxSettingsAdmin('token', 'u1');
+  t.deepEqual(ok, {
+    status: 'ok',
+    settings: { timeZone: 'Romance Standard Time', automaticRepliesSetting: { status: 'disabled' } },
+  });
+  t.is(http.calls[0].config.params, undefined);
+
+  // 404 -> no-mailbox
+  const notFound = await graph.getUserMailboxSettingsAdmin('token', 'no-mbx');
+  t.is(notFound.status, 'no-mailbox');
+  t.is(notFound.settings, null);
+
+  // 400 -> no-mailbox
+  http.fail('get', '/users/u1/mailboxSettings', 400);
+  const badReq = await graph.getUserMailboxSettingsAdmin('token', 'u1');
+  t.is(badReq.status, 'no-mailbox');
+
+  // MailboxNotEnabledForRESTAPI -> no-mailbox
+  http.on('get', '/users/u1/mailboxSettings', () => {
+    const error = new Error('Not Found');
+    error.response = { status: 404, data: { error: { code: 'MailboxNotEnabledForRESTAPI' } } };
+    throw error;
+  });
+  const notEnabled = await graph.getUserMailboxSettingsAdmin('token', 'u1');
+  t.deepEqual(notEnabled, { status: 'no-mailbox', settings: null, errorCode: 'MailboxNotEnabledForRESTAPI' });
+
+  // 403 -> access-denied
+  http.on('get', '/users/u1/mailboxSettings', () => {
+    const error = new Error('Forbidden');
+    error.response = { status: 403, data: { error: { code: 'ErrorAccessDenied' } } };
+    throw error;
+  });
+  const denied = await graph.getUserMailboxSettingsAdmin('token', 'u1');
+  t.deepEqual(denied, { status: 'access-denied', settings: null, errorCode: 'ErrorAccessDenied' });
+
+  // 500 -> error
+  http.fail('get', '/users/u1/mailboxSettings', 500);
+  const serverErr = await graph.getUserMailboxSettingsAdmin('token', 'u1');
+  t.is(serverErr.status, 'error');
+  t.is(serverErr.settings, null);
+});
+
+test.serial('updateUserMailboxSettingsAdmin patches mailbox settings and throws on failure', async t => {
+  http.on('patch', '/users/u1/mailboxSettings', {});
+  await graph.updateUserMailboxSettingsAdmin('token', 'u1', { automaticRepliesSetting: { status: 'alwaysEnabled' } });
+  t.deepEqual(http.calls[0].data, { automaticRepliesSetting: { status: 'alwaysEnabled' } });
+
+  http.on('patch', '/users/u1/mailboxSettings', () => {
+    const error = new Error('Forbidden');
+    error.response = { status: 403, data: { error: { message: 'Access is denied' } } };
+    throw error;
+  });
+  const err = await t.throwsAsync(
+    () => graph.updateUserMailboxSettingsAdmin('token', 'u1', {}),
+    { message: 'Failed to update mailbox settings' }
+  );
+  t.is(err.graphStatus, 403);
+  t.is(err.graphMessage, 'Access is denied');
 });

@@ -141,6 +141,10 @@ Tras el registro verás la página de información general de la aplicación. **
      - ✅ `Presence.Read.All` - Ver en el directorio si cada persona está disponible en Teams
      - ✅ `Mail.Read.Shared` - Comprobar qué buzones compartidos puede abrir el usuario. El permiso deja a una aplicación leer el correo del usuario y el correo compartido al que tiene acceso; la aplicación solo pregunta si existe cada bandeja de entrada y nunca lee un mensaje
      - ✅ `Place.Read.All` - Leer la lista de salas de reuniones
+     - ✅ `User.ReadWrite.All` - Administración → Usuarios: editar usuarios, responsables y licencias (solo funciona si quien entra es administrador)
+     - ✅ `Directory.ReadWrite.All` - Administración → Usuarios: añadir y quitar personas de grupos
+     - ✅ `User-PasswordProfile.ReadWrite.All` - Administración → Usuarios: restablecer contraseñas
+     - Tras concederlos hay que cerrar sesión y volver a entrar. La corrección de zonas horarias de buzones exige además el rol de Administrador de Exchange.
      - ✅ `offline_access` - Mantener el acceso a los datos
      - ✅ `Team.ReadBasic.All` - Leer los equipos a los que pertenece el usuario (página de Teams)
      - ✅ `Channel.ReadBasic.All` - Leer los canales de esos equipos

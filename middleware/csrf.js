@@ -14,7 +14,13 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 // The body of a multipart form can only be read once the route's upload
 // middleware has run, so these routes call verifyCsrfToken themselves after it
-const MULTIPART_ROUTES = new Set(['/blog', '/profile/me/photo']);
+const MULTIPART_ROUTES = new Set([
+  '/blog',
+  '/profile/me/photo',
+  '/admin/usuarios/excel/validar',
+  '/admin/usuarios/excel/sync',
+  '/admin/usuarios/excel/importar/preview',
+]);
 
 // Express sends /Blog and /blog/ to the handler of /blog, so the exemption
 // has to recognise those spellings too

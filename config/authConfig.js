@@ -52,7 +52,10 @@ const scopes = [
   'UserAuthenticationMethod.Read', // The user's own sign-in methods
   'Group.Read.All',         // Read all groups in the tenant
   'Directory.Read.All',     // Comprehensive directory data (includes manager)
-  'MailboxSettings.ReadWrite', // Read and change automatic replies
+  'User.ReadWrite.All',     // Admin user management: create/edit users, managers, and licenses
+  'Directory.ReadWrite.All', // Admin group membership and directory updates
+  'User-PasswordProfile.ReadWrite.All', // Admin password reset
+  'MailboxSettings.ReadWrite', // Read and change automatic replies and mailbox time zones
   'Mail.Send',              // Send emails as the signed-in user
   'Files.ReadWrite',        // OneDrive space used, and what the user shares outside (and taking a share back)
   'User.RevokeSessions.All', // "No fui yo": closing the user's own sessions

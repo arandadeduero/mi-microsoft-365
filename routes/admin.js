@@ -21,7 +21,7 @@ const permissions = require('../config/permissions');
 const { SKU_NAMES } = require('../config/licenseCatalog');
 const { getAppToken } = require('../services/tokenService');
 const { REGION } = require('../config/appConfig');
-const { getSubscribedSkus, getUsersForReview, getMfaRegistration, getRooms, getRoomEvents, getMyCalendars, getListMembers, createCalendarEvent } = require('../services/graphService');
+const { getSubscribedSkus, getUsersForReview, getMfaRegistration, getRooms, getRoomEvents, getMyCalendars, getListMembers, createCalendarEvent, listAdminUsers } = require('../services/graphService');
 const commissions = require('../config/commissions');
 const { reviewAccounts, describeLicenseStock } = require('../services/accountReview');
 const { getServiceMessages } = require('../services/messageCenterService');
@@ -100,21 +100,24 @@ router.get('/admin/audit.csv', isAuthenticated, requireAdmin, async (req, res, n
 });
 
 /**
- * GET /admin/cuentas
+ * GET /admin/cuentas and GET /admin/usuarios/atencion
  * Accounts that need a look, read with the app's token
  */
-router.get('/admin/cuentas', isAuthenticated, requireAdmin, async (req, res, next) => {
+async function renderAdminAccounts(req, res, next) {
   try {
     const appToken = await getAppToken();
-    const [listing, mfa] = await Promise.all([
+    const [listing, mfa, places] = await Promise.all([
       getUsersForReview(appToken),
       getMfaRegistration(appToken),
+      getRooms(req.session.accessToken),
     ]);
+    const roomEmails = new Set((places || []).map(p => (p.emailAddress || '').toLowerCase()).filter(Boolean));
     const review = listing
       ? reviewAccounts(listing.users, {
         signInsKnown: listing.signInsKnown,
         mfa,
         passwordMaxAgeDays: Number(process.env.PASSWORD_MAX_AGE_DAYS) || null,
+        roomEmails,
       })
       : null;
 
@@ -122,7 +125,10 @@ router.get('/admin/cuentas', isAuthenticated, requireAdmin, async (req, res, nex
   } catch (error) {
     next(error);
   }
-});
+}
+
+router.get('/admin/cuentas', isAuthenticated, requireAdmin, renderAdminAccounts);
+router.get('/admin/usuarios/atencion', isAuthenticated, requireAdmin, renderAdminAccounts);
 
 /**
  * GET /admin/licencias
@@ -131,6 +137,51 @@ router.get('/admin/licencias', isAuthenticated, requireAdmin, async (req, res, n
   try {
     const skus = await getSubscribedSkus(req.session.accessToken);
     res.render('admin-licenses', { title: 'Licencias', currentPage: 'audit', licenses: skus && describeLicenseStock(skus, SKU_NAMES) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /admin/licencias/:sku
+ * Every account holding a given license SKU, with a direct link to edit it
+ */
+router.get('/admin/licencias/:sku', isAuthenticated, requireAdmin, async (req, res, next) => {
+  try {
+    const token = req.session.accessToken;
+    const skuParam = String(req.params.sku || '').trim();
+    const skus = await getSubscribedSkus(token);
+    if (!skus) {
+      return next(userError(503, 'Ahora mismo no se pueden leer las licencias.'));
+    }
+
+    const stock = describeLicenseStock(skus, SKU_NAMES);
+    const matchedSku = skus.find(s => s.skuId === skuParam || s.skuPartNumber === skuParam);
+    const license = stock.find(s => (s.skuId && s.skuId === skuParam) || s.code === skuParam)
+      || (matchedSku ? {
+        skuId: matchedSku.skuId,
+        code: matchedSku.skuPartNumber,
+        name: SKU_NAMES[matchedSku.skuPartNumber] || matchedSku.skuPartNumber,
+        total: matchedSku.prepaidUnits?.enabled || 0,
+        used: matchedSku.consumedUnits || 0,
+        left: (matchedSku.prepaidUnits?.enabled || 0) - (matchedSku.consumedUnits || 0),
+      } : null);
+
+    if (!matchedSku || !license) {
+      return next(userError(404, 'Licencia no encontrada'));
+    }
+
+    const { users: allUsers } = await listAdminUsers(token, { onlyDisabled: null });
+    const holders = allUsers
+      .filter(u => (u.assignedLicenses || []).some(l => l.skuId === matchedSku.skuId))
+      .sort((a, b) => compareEs(a.displayName || a.userPrincipalName || '', b.displayName || b.userPrincipalName || ''));
+
+    res.render('admin-license-users', {
+      title: `Licencia · ${license.name}`,
+      currentPage: 'audit',
+      license,
+      users: holders,
+    });
   } catch (error) {
     next(error);
   }

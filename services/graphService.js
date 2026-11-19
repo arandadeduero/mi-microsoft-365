@@ -36,6 +36,9 @@ function resetGraphCaches() {
 function graphError(message, error) {
   const err = new Error(message);
   err.graphStatus = error.response?.status;
+  if (error.response?.data?.error?.message) {
+    err.graphMessage = error.response.data.error.message;
+  }
   return err;
 }
 
@@ -247,6 +250,35 @@ async function getAllUsers(accessToken) {
 }
 
 /**
+ * Get active, licensed member accounts (excludes rooms, shared mailboxes,
+ * unlicensed aliases, disabled accounts and external guests).
+ * @param {string} accessToken - Valid access token for Microsoft Graph
+ * @returns {Promise<Array>} Array of licensed users sorted by displayName
+ */
+async function getLicensedUsers(accessToken) {
+  try {
+    const users = await getAllPages(`${GRAPH_API_BASE}/users`, accessToken, {
+      params: {
+        $select: 'id,displayName,mail,userPrincipalName,jobTitle,department,assignedLicenses,accountEnabled,userType',
+        $orderby: 'displayName',
+        $top: 999,
+      },
+    });
+    return users
+      .filter(user =>
+        user.accountEnabled !== false
+        && user.userType !== 'Guest'
+        && Array.isArray(user.assignedLicenses)
+        && user.assignedLicenses.length > 0
+      )
+      .map(({ assignedLicenses, accountEnabled, userType, ...user }) => user);
+  } catch (error) {
+    console.error('Error fetching licensed users:', error.response?.data || error.message);
+    return [];
+  }
+}
+
+/**
  * Send an email via Microsoft Graph
  * @param {string} accessToken - Valid access token for Microsoft Graph
  * @param {Object} emailData - Email data (to, subject, body); `to` is one address or a list
@@ -315,6 +347,28 @@ async function getUserPhoto(accessToken) {
 }
 
 /**
+ * Get another user's profile photo by directory ID
+ * @param {string} accessToken - Valid access token for Microsoft Graph
+ * @param {string} userId - Directory ID or UPN of the target user
+ * @returns {Promise<Buffer|null>} Photo data as buffer, or null if no photo exists or unreadable
+ */
+async function getUserPhotoById(accessToken, userId) {
+  if (!userId) return null;
+  try {
+    const response = await graphRequest('get', `${GRAPH_API_BASE}/users/${encodeURIComponent(userId)}/photo/$value`, accessToken, {
+      responseType: 'arraybuffer',
+    });
+    return Buffer.from(response.data, 'binary');
+  } catch (error) {
+    if (error.response?.status === 404) {
+      return null;
+    }
+    console.error(`Error fetching user photo for ${userId}:`, error.response?.data || error.message);
+    return null;
+  }
+}
+
+/**
  * Check whether the signed-in user has a profile photo without downloading its bytes
  * @param {string} accessToken - Valid access token
  * @returns {Promise<boolean>}
@@ -377,13 +431,15 @@ async function getUserManager(accessToken) {
  */
 async function getAllTenantGroups(accessToken) {
   try {
-    return await getAllPages(`${GRAPH_API_BASE}/groups`, accessToken, {
+    // No $orderby: Graph answers "Invalid search request" for it on groups
+    // with large pages in some tenants, so the list is sorted here instead
+    const groups = await getAllPages(`${GRAPH_API_BASE}/groups`, accessToken, {
       params: {
         $select: 'id,displayName,description,mail,mailEnabled,securityEnabled,groupTypes',
-        $orderby: 'displayName',
         $top: 999,
       },
     });
+    return groups.sort((a, b) => (a.displayName || '').localeCompare(b.displayName || '', 'es'));
   } catch (error) {
     console.error('Error fetching all tenant groups:', error.response?.data || error.message);
     throw graphError('Failed to fetch tenant groups', error);
@@ -1352,10 +1408,498 @@ async function resetUserPassword(accessToken, userId, newPassword) {
   }
 }
 
+// Microsoft Graph $batch accepts at most 20 sub-requests per call
+const GRAPH_BATCH_LIMIT = 20;
+
+const ADMIN_USER_LIST_FIELDS = [
+  'id', 'userPrincipalName', 'displayName', 'givenName', 'surname', 'mail',
+  'jobTitle', 'department', 'companyName', 'officeLocation', 'mobilePhone',
+  'streetAddress', 'city', 'state', 'postalCode', 'country', 'usageLocation',
+  'preferredLanguage', 'accountEnabled', 'userType', 'employeeId',
+  'employeeType', 'employeeHireDate', 'lastPasswordChangeDateTime', 'assignedLicenses',
+].join(',');
+
+const ADMIN_USER_DETAIL_FIELDS = [
+  'id', 'userPrincipalName', 'displayName', 'givenName', 'surname', 'mail',
+  'mailNickname', 'jobTitle', 'department', 'officeLocation', 'mobilePhone',
+  'businessPhones', 'usageLocation', 'accountEnabled', 'city', 'country',
+  'postalCode', 'state', 'streetAddress', 'companyName', 'employeeId',
+  'employeeType', 'employeeHireDate', 'preferredLanguage', 'userType',
+  'lastPasswordChangeDateTime', 'assignedLicenses',
+].join(',');
+
+const NO_MAILBOX_ERROR_RE = /MailboxNotEnabledForRESTAPI|ResourceNotFound|ErrorMailboxStoreUnavailable|BadRequest/;
+
+/**
+ * Execute Graph JSON batch requests in chunks of 20
+ * @param {string} accessToken - Valid access token
+ * @param {Array<{id: string, method: string, url: string, headers?: Object, body?: any}>} requests
+ * @returns {Promise<Map<string, {status: number, body: any}>>} Responses keyed by sub-request id
+ */
+async function graphBatch(accessToken, requests) {
+  const results = new Map();
+  if (!requests || requests.length === 0) return results;
+
+  for (let i = 0; i < requests.length; i += GRAPH_BATCH_LIMIT) {
+    const chunk = requests.slice(i, i + GRAPH_BATCH_LIMIT);
+    try {
+      const response = await graphRequest('post', `${GRAPH_API_BASE}/$batch`, accessToken, {
+        data: { requests: chunk },
+        headers: { 'Content-Type': 'application/json' },
+        timeout: LARGE_TIMEOUT_MS,
+      });
+      for (const item of response.data?.responses || []) {
+        results.set(String(item.id), { status: item.status, body: item.body });
+      }
+    } catch (error) {
+      console.error('Error executing Graph batch request:', error.response?.data || error.message);
+      throw graphError('Failed to execute batch request', error);
+    }
+  }
+
+  return results;
+}
+
+/**
+ * List internal users for admin management, optionally merging signInActivity
+ * @param {string} accessToken - Valid access token
+ * @param {Object} [options]
+ * @param {boolean|null} [options.onlyDisabled=false] - false: enabled only, true: disabled only, null: all users
+ * @param {boolean} [options.includeSignInActivity=false] - Whether to enrich with signInActivity via appToken
+ * @param {string|null} [options.appToken=null] - App-only token for signInActivity lookup
+ * @returns {Promise<{users: Array, signInsKnown: boolean}>}
+ */
+async function listAdminUsers(accessToken, { onlyDisabled = false, includeSignInActivity = false, appToken = null } = {}) {
+  const params = {
+    $select: ADMIN_USER_LIST_FIELDS,
+    $top: 999,
+  };
+  if (onlyDisabled !== null) {
+    params.$filter = onlyDisabled ? 'accountEnabled eq false' : 'accountEnabled eq true';
+  }
+
+  let rawUsers;
+  try {
+    rawUsers = await getAllPages(`${GRAPH_API_BASE}/users`, accessToken, {
+      params,
+      timeout: LARGE_TIMEOUT_MS,
+    });
+  } catch (error) {
+    console.error('Error fetching admin users:', error.response?.data || error.message);
+    throw graphError('Failed to fetch admin users', error);
+  }
+
+  let users = rawUsers.filter(u => !String(u.userPrincipalName || '').toLowerCase().includes('#ext#'));
+  let signInsKnown = false;
+
+  if (includeSignInActivity && appToken) {
+    try {
+      const activityRows = await getAllPages(`${GRAPH_API_BASE}/users`, appToken, {
+        params: { $select: 'id,signInActivity', $top: 500 },
+        timeout: LARGE_TIMEOUT_MS,
+      });
+      const byId = new Map(activityRows.map(row => [row.id, row.signInActivity || null]));
+      users = users.map(user => (
+        byId.has(user.id) ? { ...user, signInActivity: byId.get(user.id) } : user
+      ));
+      signInsKnown = true;
+    } catch (error) {
+      console.error('Error fetching sign-in activity for admin users:', error.response?.data || error.message);
+      signInsKnown = false;
+    }
+  }
+
+  return { users, signInsKnown };
+}
+
+/**
+ * Fetch managers for multiple users using $batch
+ * @param {string} accessToken - Valid access token
+ * @param {Array<string>} userIds - Directory IDs
+ * @returns {Promise<Map<string, {id: string, displayName: string, userPrincipalName: string}|null>>}
+ */
+async function fetchManagersBatch(accessToken, userIds) {
+  const result = new Map();
+  if (!userIds || userIds.length === 0) return result;
+
+  const requests = userIds.map((uid, i) => ({
+    id: String(i),
+    method: 'GET',
+    url: `/users/${encodeURIComponent(uid)}/manager?$select=id,displayName,userPrincipalName`,
+  }));
+  const responses = await graphBatch(accessToken, requests);
+
+  userIds.forEach((uid, i) => {
+    const res = responses.get(String(i));
+    if (res && res.status === 200 && res.body) {
+      result.set(uid, {
+        id: res.body.id,
+        displayName: res.body.displayName,
+        userPrincipalName: res.body.userPrincipalName,
+      });
+    } else {
+      result.set(uid, null);
+    }
+  });
+
+  return result;
+}
+
+/**
+ * Fetch group memberships for multiple users using $batch
+ * @param {string} accessToken - Valid access token
+ * @param {Array<string>} userIds - Directory IDs
+ * @returns {Promise<Map<string, Array<{id: string, displayName: string}>>>}
+ */
+async function fetchUserGroupsBatch(accessToken, userIds) {
+  const result = new Map();
+  if (!userIds || userIds.length === 0) return result;
+
+  const requests = userIds.map((uid, i) => ({
+    id: String(i),
+    method: 'GET',
+    url: `/users/${encodeURIComponent(uid)}/memberOf/microsoft.graph.group?$select=id,displayName&$top=999`,
+  }));
+  const responses = await graphBatch(accessToken, requests);
+
+  userIds.forEach((uid, i) => {
+    const res = responses.get(String(i));
+    if (res && res.status === 200 && Array.isArray(res.body?.value)) {
+      result.set(uid, res.body.value.map(g => ({ id: g.id, displayName: g.displayName })));
+    } else {
+      result.set(uid, []);
+    }
+  });
+
+  return result;
+}
+
+/**
+ * Fetch license details for multiple users using $batch
+ * @param {string} accessToken - Valid access token
+ * @param {Array<string>} userIds - Directory IDs
+ * @returns {Promise<Map<string, Array<{skuId: string, skuPartNumber: string}>>>}
+ */
+async function fetchUserLicensesBatch(accessToken, userIds) {
+  const result = new Map();
+  if (!userIds || userIds.length === 0) return result;
+
+  const requests = userIds.map((uid, i) => ({
+    id: String(i),
+    method: 'GET',
+    url: `/users/${encodeURIComponent(uid)}/licenseDetails?$select=skuId,skuPartNumber`,
+  }));
+  const responses = await graphBatch(accessToken, requests);
+
+  userIds.forEach((uid, i) => {
+    const res = responses.get(String(i));
+    if (res && res.status === 200 && Array.isArray(res.body?.value)) {
+      result.set(uid, res.body.value.map(l => ({ skuId: l.skuId, skuPartNumber: l.skuPartNumber })));
+    } else {
+      result.set(uid, []);
+    }
+  });
+
+  return result;
+}
+
+/**
+ * Get full admin details for a single user by directory ID or UPN
+ * @param {string} accessToken - Valid access token
+ * @param {string} idOrUpn - User ID or UPN
+ * @returns {Promise<Object|null>} User object, or null on 404
+ */
+async function getAdminUser(accessToken, idOrUpn) {
+  try {
+    const response = await graphRequest('get', `${GRAPH_API_BASE}/users/${encodeURIComponent(idOrUpn)}`, accessToken, {
+      params: { $select: ADMIN_USER_DETAIL_FIELDS },
+    });
+    return response.data;
+  } catch (error) {
+    if (error.response?.status === 404) return null;
+    console.error(`Error fetching admin user ${idOrUpn}:`, error.response?.data || error.message);
+    throw graphError('Failed to fetch admin user', error);
+  }
+}
+
+/**
+ * Get a user's manager by user ID or UPN
+ * @param {string} accessToken - Valid access token
+ * @param {string} idOrUpn - User ID or UPN
+ * @returns {Promise<Object|null>} Manager object, or null on 404 or error
+ */
+async function getUserManagerById(accessToken, idOrUpn) {
+  try {
+    const response = await graphRequest('get', `${GRAPH_API_BASE}/users/${encodeURIComponent(idOrUpn)}/manager`, accessToken, {
+      params: { $select: 'id,displayName,userPrincipalName,jobTitle,mail' },
+    });
+    return response.data;
+  } catch (error) {
+    if (error.response?.status !== 404) {
+      console.error(`Error fetching manager for user ${idOrUpn}:`, error.response?.data || error.message);
+    }
+    return null;
+  }
+}
+
+/**
+ * Get a user's group memberships by user ID
+ * @param {string} accessToken - Valid access token
+ * @param {string} userId - User ID
+ * @returns {Promise<Array>} Groups, or [] on error
+ */
+async function getUserGroupsById(accessToken, userId) {
+  try {
+    return await getAllPages(`${GRAPH_API_BASE}/users/${encodeURIComponent(userId)}/memberOf/microsoft.graph.group`, accessToken, {
+      params: { $select: 'id,displayName', $top: 999 },
+    });
+  } catch (error) {
+    console.error(`Error fetching groups for user ${userId}:`, error.response?.data || error.message);
+    return [];
+  }
+}
+
+/**
+ * Get a user's license details by user ID
+ * @param {string} accessToken - Valid access token
+ * @param {string} userId - User ID
+ * @returns {Promise<Array>} License details, or [] on error
+ */
+async function getUserLicensesById(accessToken, userId) {
+  try {
+    return await getAllPages(`${GRAPH_API_BASE}/users/${encodeURIComponent(userId)}/licenseDetails`, accessToken, {
+      params: { $select: 'skuId,skuPartNumber' },
+    });
+  } catch (error) {
+    console.error(`Error fetching licenses for user ${userId}:`, error.response?.data || error.message);
+    return [];
+  }
+}
+
+/**
+ * Create a new directory user
+ * @param {string} accessToken - Valid access token
+ * @param {Object} payload - User creation payload
+ * @returns {Promise<Object>} Created user
+ */
+async function createAdminUser(accessToken, payload) {
+  try {
+    const response = await graphRequest('post', `${GRAPH_API_BASE}/users`, accessToken, {
+      data: payload,
+      headers: { 'Content-Type': 'application/json' },
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error creating user:', error.response?.data || error.message);
+    throw graphError('Failed to create user', error);
+  }
+}
+
+/**
+ * Update a directory user by ID or UPN
+ * @param {string} accessToken - Valid access token
+ * @param {string} idOrUpn - User ID or UPN
+ * @param {Object} payload - Fields to patch
+ * @returns {Promise<void>}
+ */
+async function updateAdminUser(accessToken, idOrUpn, payload) {
+  try {
+    await graphRequest('patch', `${GRAPH_API_BASE}/users/${encodeURIComponent(idOrUpn)}`, accessToken, {
+      data: payload,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  } catch (error) {
+    console.error(`Error updating user ${idOrUpn}:`, error.response?.data || error.message);
+    throw graphError('Failed to update user', error);
+  }
+}
+
+/**
+ * Assign a manager to a user
+ * @param {string} accessToken - Valid access token
+ * @param {string} userId - User ID
+ * @param {string} managerId - Manager directory ID
+ * @returns {Promise<void>}
+ */
+async function setUserManager(accessToken, userId, managerId) {
+  try {
+    await graphRequest('put', `${GRAPH_API_BASE}/users/${encodeURIComponent(userId)}/manager/$ref`, accessToken, {
+      data: { '@odata.id': `${GRAPH_API_BASE}/users/${encodeURIComponent(managerId)}` },
+      headers: { 'Content-Type': 'application/json' },
+    });
+  } catch (error) {
+    console.error(`Error setting manager for user ${userId}:`, error.response?.data || error.message);
+    throw graphError('Failed to set user manager', error);
+  }
+}
+
+/**
+ * Remove licenses from a user
+ * @param {string} accessToken - Valid access token
+ * @param {string} userId - User ID
+ * @param {Array<string>} skuIds - SKU IDs to remove
+ * @returns {Promise<void>}
+ */
+async function removeUserLicenses(accessToken, userId, skuIds) {
+  if (!skuIds || skuIds.length === 0) return;
+  try {
+    await graphRequest('post', `${GRAPH_API_BASE}/users/${encodeURIComponent(userId)}/assignLicense`, accessToken, {
+      data: { addLicenses: [], removeLicenses: skuIds },
+      headers: { 'Content-Type': 'application/json' },
+    });
+  } catch (error) {
+    console.error(`Error removing licenses for user ${userId}:`, error.response?.data || error.message);
+    throw graphError('Failed to remove user licenses', error);
+  }
+}
+
+/**
+ * Add and remove licenses of a user in one call
+ * @param {string} accessToken - Valid access token
+ * @param {string} userId - User directory ID
+ * @param {{add?: string[], remove?: string[]}} changes - SKU ids
+ * @returns {Promise<void>}
+ */
+async function assignUserLicenses(accessToken, userId, { add = [], remove = [] } = {}) {
+  if (add.length === 0 && remove.length === 0) return;
+  try {
+    await graphRequest('post', `${GRAPH_API_BASE}/users/${encodeURIComponent(userId)}/assignLicense`, accessToken, {
+      data: { addLicenses: add.map(skuId => ({ skuId, disabledPlans: [] })), removeLicenses: remove },
+      headers: { 'Content-Type': 'application/json' },
+    });
+  } catch (error) {
+    console.error(`Error assigning licenses for user ${userId}:`, error.response?.data || error.message);
+    throw graphError('Failed to assign user licenses', error);
+  }
+}
+
+/**
+ * Add a user to a group, ignoring already-member conflicts (409 or 400 "already exist")
+ * @param {string} accessToken - Valid access token
+ * @param {string} groupId - Group ID
+ * @param {string} userId - User directory ID
+ * @returns {Promise<void>}
+ */
+async function addUserToGroup(accessToken, groupId, userId) {
+  try {
+    await graphRequest('post', `${GRAPH_API_BASE}/groups/${encodeURIComponent(groupId)}/members/$ref`, accessToken, {
+      data: { '@odata.id': `${GRAPH_API_BASE}/directoryObjects/${encodeURIComponent(userId)}` },
+      headers: { 'Content-Type': 'application/json' },
+    });
+  } catch (error) {
+    const status = error.response?.status;
+    const message = error.response?.data?.error?.message || '';
+    if (status === 409 || (status === 400 && message.includes('already exist'))) {
+      return;
+    }
+    console.error(`Error adding user ${userId} to group ${groupId}:`, error.response?.data || error.message);
+    throw graphError('Failed to add user to group', error);
+  }
+}
+
+/**
+ * Remove a user from a group, ignoring 404 (not a member)
+ * @param {string} accessToken - Valid access token
+ * @param {string} groupId - Group ID
+ * @param {string} userId - User directory ID
+ * @returns {Promise<void>}
+ */
+async function removeUserFromGroup(accessToken, groupId, userId) {
+  try {
+    await graphRequest('delete', `${GRAPH_API_BASE}/groups/${encodeURIComponent(groupId)}/members/${encodeURIComponent(userId)}/$ref`, accessToken);
+  } catch (error) {
+    if (error.response?.status === 404) {
+      return;
+    }
+    console.error(`Error removing user ${userId} from group ${groupId}:`, error.response?.data || error.message);
+    throw graphError('Failed to remove user from group', error);
+  }
+}
+
+/**
+ * Read another user's mailbox settings (never passes $select, which Graph rejects with 400)
+ * @param {string} accessToken - Valid access token
+ * @param {string} userId - User ID
+ * @returns {Promise<{status: 'ok'|'no-mailbox'|'access-denied'|'error', settings: Object|null, errorCode?: string}>}
+ */
+async function getUserMailboxSettingsAdmin(accessToken, userId) {
+  try {
+    const response = await graphRequest('get', `${GRAPH_API_BASE}/users/${encodeURIComponent(userId)}/mailboxSettings`, accessToken);
+    return { status: 'ok', settings: response.data };
+  } catch (error) {
+    const httpStatus = error.response?.status;
+    const errorCode = error.response?.data?.error?.code || (httpStatus ? String(httpStatus) : error.message);
+    if (httpStatus === 404 || httpStatus === 400 || NO_MAILBOX_ERROR_RE.test(errorCode)) {
+      return { status: 'no-mailbox', settings: null, errorCode };
+    }
+    if (httpStatus === 403 || errorCode === 'ErrorAccessDenied') {
+      return { status: 'access-denied', settings: null, errorCode };
+    }
+    console.error(`Error fetching mailbox settings for ${userId}:`, error.response?.data || error.message);
+    return { status: 'error', settings: null, errorCode };
+  }
+}
+
+/**
+ * Update another user's mailbox settings
+ * @param {string} accessToken - Valid access token
+ * @param {string} userId - User ID
+ * @param {Object} payload - Mailbox settings to patch
+ * @returns {Promise<void>}
+ */
+async function updateUserMailboxSettingsAdmin(accessToken, userId, payload) {
+  try {
+    await graphRequest('patch', `${GRAPH_API_BASE}/users/${encodeURIComponent(userId)}/mailboxSettings`, accessToken, {
+      data: payload,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  } catch (error) {
+    console.error(`Error updating mailbox settings for ${userId}:`, error.response?.data || error.message);
+    throw graphError('Failed to update mailbox settings', error);
+  }
+}
+
+/**
+ * Encode a SharePoint or OneDrive sharing link as a Graph shareId (u!base64url)
+ * @param {string} sharingUrl
+ * @returns {string}
+ */
+function encodeSharingUrl(sharingUrl) {
+  const base64 = Buffer.from(String(sharingUrl || '').trim(), 'utf8')
+    .toString('base64')
+    .replace(/=+$/, '')
+    .replace(/\//g, '_')
+    .replace(/\+/g, '-');
+  return `u!${base64}`;
+}
+
+/**
+ * Download the raw bytes of a file shared in SharePoint or OneDrive via Graph
+ * @param {string} accessToken - Valid access token
+ * @param {string} sharingUrl - SharePoint/OneDrive sharing URL
+ * @returns {Promise<Buffer>}
+ */
+async function downloadSharedFile(accessToken, sharingUrl) {
+  const shareId = encodeSharingUrl(sharingUrl);
+  try {
+    const response = await graphRequest(
+      'get',
+      `${GRAPH_API_BASE}/shares/${encodeURIComponent(shareId)}/driveItem/content`,
+      accessToken,
+      { responseType: 'arraybuffer', timeout: LARGE_TIMEOUT_MS }
+    );
+    return Buffer.from(response.data, 'binary');
+  } catch (error) {
+    console.error('Error downloading shared file from Graph:', error.response?.data || error.message);
+    throw graphError('Failed to download shared file', error);
+  }
+}
+
 module.exports = {
   resetGraphCaches,
   getUserProfile,
   getUserPhoto,
+  getUserPhotoById,
   hasUserPhoto,
   getUserGroups,
   getUserManager,
@@ -1379,6 +1923,7 @@ module.exports = {
   getAuthenticationMethods,
   getUserDevices,
   getAllUsers,
+  getLicensedUsers,
   getUserById,
   getDirectReports,
   getSubscribedSkus,
@@ -1415,4 +1960,24 @@ module.exports = {
   fetchUserAdminRoles,
   getUserAdminRoles,
   resetUserPassword,
+  graphBatch,
+  listAdminUsers,
+  fetchManagersBatch,
+  fetchUserGroupsBatch,
+  fetchUserLicensesBatch,
+  getAdminUser,
+  getUserManagerById,
+  getUserGroupsById,
+  getUserLicensesById,
+  createAdminUser,
+  updateAdminUser,
+  setUserManager,
+  removeUserLicenses,
+  assignUserLicenses,
+  addUserToGroup,
+  removeUserFromGroup,
+  getUserMailboxSettingsAdmin,
+  updateUserMailboxSettingsAdmin,
+  encodeSharingUrl,
+  downloadSharedFile,
 };

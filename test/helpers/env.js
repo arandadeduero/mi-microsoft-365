@@ -30,6 +30,7 @@ Object.assign(process.env, {
   // High enough that only the rate limit tests, which lower it, ever hit it
   RESET_RATE_LIMIT: '1000',
   PASSWORD_MAX_AGE_DAYS: '90',
+  USERS_EXCEL_URL: '',
   // A directory of its own for every test file, outside the project
   AUDIT_DIR: fs.mkdtempSync(path.join(os.tmpdir(), 'm365-audit-')),
   DATA_DIR: fs.mkdtempSync(path.join(os.tmpdir(), 'm365-data-')),
