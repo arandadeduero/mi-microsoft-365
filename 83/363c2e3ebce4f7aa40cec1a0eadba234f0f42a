@@ -1,0 +1,142 @@
+.dockerignore
+  h_3aa52f59e1a7c5 9,17,19
+AGENTS.md
+  h_3aa52f59e1a7c5 33,61,120
+Dockerfile
+  h_3aa52f59e1a7c5 9-12
+config/authConfig.js
+  h_3aa52f59e1a7c5 14-15,36
+docker-compose.yml
+  h_3aa52f59e1a7c5 37
+middleware/auth.js
+  h_3aa52f59e1a7c5 8,13-20,37-39,41,48,68,70-88,92-95,99-103,105-107,111-119,121-129
+middleware/errorHandler.js
+  h_3aa52f59e1a7c5 32-35,43-45
+middleware/securityHeaders.js
+  h_3aa52f59e1a7c5 40-51,53,55
+public/favicon.svg
+  h_3aa52f59e1a7c5 1-4
+public/js/confirm.js
+  h_3aa52f59e1a7c5 4-8
+public/js/directory.js
+  h_3aa52f59e1a7c5 14-16,19-28,30,32-36
+public/js/groups.js
+  h_3aa52f59e1a7c5 10,15-19,27,31,33,59-61
+public/js/organigrama.js
+  h_3aa52f59e1a7c5 15-16,18-24,27,30,33-35,167-172,174-178,180-186,190,221,224,229,240,243-244,246,251-267
+public/js/profile.js
+  h_3aa52f59e1a7c5 12-13,18,20
+public/js/rooms.js
+  h_3aa52f59e1a7c5 14,17,35
+routes/account.js
+  h_3aa52f59e1a7c5 32-33,35,41,48,172,177,196,219-247,268,284,293,433
+routes/activity.js
+  h_3aa52f59e1a7c5 20
+routes/admin.js
+  h_3aa52f59e1a7c5 30,53,109-112,116,174,185-188,191,197,200-202,207,209,216,253-262,264,266-268,273-275,313-317
+routes/apps.js
+  h_3aa52f59e1a7c5 14-15,28,31
+routes/blog.js
+  h_3aa52f59e1a7c5 11-29,44
+routes/debug.js
+  h_3aa52f59e1a7c5 12,23
+routes/groupRequests.js
+  h_3aa52f59e1a7c5 16,20,72-73,75,77,80,86-87,89,91-106,108-112,121,123,150,155-156,193-204,221-232
+routes/index.js
+  h_3aa52f59e1a7c5 24,28,99,108,210,216,284-285,288
+routes/ownedGroups.js
+  h_3aa52f59e1a7c5 20-21,31,73
+routes/rooms.js
+  h_3aa52f59e1a7c5 15,19,25,87,104-106
+routes/sharing.js
+  h_3aa52f59e1a7c5 17,34-38,65-66
+server.js
+  h_3aa52f59e1a7c5 45-53,75,79-85,105-113,146-148,152-154
+services/accountInsights.js
+  h_3aa52f59e1a7c5 11,273,276,281-282,289-290,299,305-360,364
+services/accountReview.js
+  h_3aa52f59e1a7c5 5-6,26,29-51,53-75,77-78
+services/appGrants.js
+  h_3aa52f59e1a7c5 5-6,84,94-95,98
+services/asyncUtils.js
+  h_3aa52f59e1a7c5 1-108
+services/auditService.js
+  h_3aa52f59e1a7c5 16-23,33,37-47,69,76,79-80,83,93-102,105-110,112-114
+services/formatters.js
+  h_3aa52f59e1a7c5 1-77
+services/graphService.js
+  h_3aa52f59e1a7c5 3-6,11-12,15-27,42-87,91-92,95-96,98,100-102,104,117,136,154-155,170,190-193,200-203,219,221,236,259,262,268,276,279,283-286,302,317-335,343-344,360,380,384,427,430-431,433-440,456,459,477-480,499-500,517,535-537,552,569-570,587,605,607,609-615,631-632,641-642,648-658,671,673,680-682,701,717,732-733,747,752-761,778,780-785,790-794,812,820,835-836,852-853,855,857,860,877-879,895,910,913,917-918,944,959-961,978-980,995-996,1012,1028,1031,1047,1062-1063,1081,1102,1118-1120,1135-1136,1152,1169-1170,1187,1189-1191,1196,1200-1201,1205,1211-1212,1215-1225,1233-1234,1236,1238,1240-1241,1246,1250-1258,1266,1271,1277,1297,1318-1319,1344-1346,1356,1359,1415
+services/messageCenterService.js
+  h_3aa52f59e1a7c5 12,19-24,42-50,55
+services/orgChart.js
+  h_3aa52f59e1a7c5 9-10,59-60,72
+services/requestStore.js
+  h_3aa52f59e1a7c5 40-81,91-92,113-131,172,176
+services/resetTokenService.js
+  h_3aa52f59e1a7c5 18-20,22-23,26-28,30-32
+services/settingsStore.js
+  h_3aa52f59e1a7c5 67-68
+services/sharing.js
+  h_3aa52f59e1a7c5 6-7,22,87
+services/vcard.js
+  h_3aa52f59e1a7c5 7
+services/wpService.js
+  h_3aa52f59e1a7c5 6-7,17,20-21,24-25,28-34,41-45
+test/account.test.js
+  h_3aa52f59e1a7c5 260,620,622,624,629,633,651,654,663,668,676-681,683,689-692,695,697-698,700,703-704,707
+test/accountInsights.test.js
+  h_3aa52f59e1a7c5 18,271-298
+test/admin-pages.test.js
+  h_3aa52f59e1a7c5 16,42
+test/apps.test.js
+  h_3aa52f59e1a7c5 16,31
+test/authenticated.test.js
+  h_3aa52f59e1a7c5 17,54,70
+test/graphService.test.js
+  h_3aa52f59e1a7c5 16,89-92,357-397
+test/middleware.test.js
+  h_3aa52f59e1a7c5 142-181
+test/rooms.test.js
+  h_3aa52f59e1a7c5 16,44
+test/routes.test.js
+  h_3aa52f59e1a7c5 46-47,50-52
+views/account.ejs
+  h_3aa52f59e1a7c5 67,127,190-192
+views/admin-commissions.ejs
+  h_3aa52f59e1a7c5 14
+views/admin-messages.ejs
+  h_3aa52f59e1a7c5 23-24
+views/admin-rooms.ejs
+  h_3aa52f59e1a7c5 63,81
+views/audit.ejs
+  h_3aa52f59e1a7c5 66
+views/calendars.ejs
+  h_3aa52f59e1a7c5 1-119
+views/group-requests.ejs
+  h_3aa52f59e1a7c5 3
+views/groups.ejs
+  h_3aa52f59e1a7c5 1,121
+views/my-activity.ejs
+  h_3aa52f59e1a7c5 33
+views/organigrama.ejs
+  h_3aa52f59e1a7c5 1-7
+views/partials/header.ejs
+  h_3aa52f59e1a7c5 7-11,18-25,68
+views/profile.ejs
+  h_3aa52f59e1a7c5 1,23,25
+views/sharing.ejs
+  h_3aa52f59e1a7c5 43
+views/sign-ins.ejs
+  h_3aa52f59e1a7c5 35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "83363c2e3ebce4f7aa40cec1a0eadba234f0f42a",
+  "prompts": {},
+  "humans": {
+    "h_3aa52f59e1a7c5": {
+      "author": "Guillermo López <willyaranda@gmail.com>"
+    }
+  }
+}
