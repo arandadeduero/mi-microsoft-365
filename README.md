@@ -8,7 +8,7 @@ Portal interno de autoservicio para los usuarios de Microsoft 365 del Ayuntamien
 - ✅ **Autenticación con Microsoft 365** - Flujo de código de autorización OAuth 2.0 con MSAL, para un solo inquilino (tenant)
 - ✅ **Perfil** - Perfil, foto, grupos, responsable y datos en bruto de Graph; cada usuario puede editar su puesto, teléfonos, oficina y foto. Los campos que Microsoft no deja cambiar a un usuario se muestran en solo lectura
 - ✅ **Directorio** - Directorio del personal con buscador, teléfonos y oficinas, exportable a Excel; cada persona tiene una tarjeta con código QR y vCard para guardarla en el móvil
-- ✅ **Peticiones internas** - La pestaña «Peticiones» (`/peticiones`) reúne lo que se puede pedir dentro del Ayuntamiento. Hoy: un formulario de **soporte informático** (tipo de problema, cuánto afecta, asunto, qué ocurre, equipo, dónde y teléfono, con la persona y los datos del perfil ya puestos) y un enlace a un formulario de Microsoft Forms. **Es una prueba:** el formulario se revisa y se enseña lo escrito, pero todavía no se envía ni se guarda en ningún sitio
+- ✅ **Peticiones internas** - La pestaña «Peticiones» (`/peticiones`) reúne lo que se puede pedir dentro del Ayuntamiento. Hoy: un formulario de **soporte informático** (tipo de problema, cuánto afecta, asunto, qué ocurre, equipo, dónde y teléfono, con la persona y los datos del perfil ya puestos) y un enlace a un formulario de Microsoft Forms. El formulario de soporte se envía por **correo a Informática** (`IT_SUPPORT_EMAIL`) desde el buzón de quien lo rellena, para que la respuesta le llegue a ella
 - ✅ **Mi firma de correo** - La firma se genera sola con los datos del perfil, en el formato del generador del Ayuntamiento ([firmas-correo](https://github.com/arandadeduero/firmas-correo)) y con el logo de la concejalía. Lo único que se elige es la concejalía, si el perfil no la dice; se copia con formato o como HTML
 - ✅ **Aplicaciones con acceso** - Qué aplicaciones tienen permisos sobre la cuenta del usuario y qué pueden hacer, en lenguaje llano
 - ✅ **Qué comparto fuera** - Archivos de OneDrive con enlaces para cualquiera o compartidos con direcciones externas, y un botón para dejar de compartirlos
@@ -525,6 +525,7 @@ No hay informe de cobertura: c8 no funciona en las versiones actuales de Node.js
 | `INTRANET_URL` | Dirección de la intranet de la organización, enlazada desde la página de inicio, la de ayuda y el pie | `https://example.sharepoint.com` | No (por defecto: la del Ayuntamiento) |
 | `ORG_CHART_ROOT` | Dirección de la persona que está en lo alto del organigrama; las cuentas que no dependen de ella se listan debajo del gráfico | `top-person@example.com` | No (por defecto: la del Ayuntamiento; si nadie tiene esa dirección, quien tenga gente a su cargo y ningún responsable) |
 | `ADMIN_EMAIL` | Buzón que recibe las correcciones de responsable, las solicitudes de acceso a grupos, los inicios de sesión denunciados y los mensajes de la página de ayuda | `informatica@example.es` | Recomendada (si falta se usa una dirección incluida en el código) |
+| `IT_SUPPORT_EMAIL` | Buzón que recibe el formulario de soporte informático de «Peticiones». Las solicitudes de `/equipo` siguen yendo a `ADMIN_EMAIL` | `informatica@example.com` | No (por defecto: `informatica@arandadeduero.es`) |
 | `TRUST_PROXY` | Número de proxies inversos delante de la aplicación, para que vea la dirección y el protocolo reales del cliente | `1` | Cuando hay un proxy delante |
 | `RESET_RATE_LIMIT` | Enlaces de restablecimiento que una dirección IP puede pedir cada 15 minutos | `5` | No (por defecto: 5) |
 | `PORT` | Puerto del servidor | `3000` | No (por defecto: 3000) |
@@ -594,7 +595,7 @@ Quién puede usar `/blog` no es una variable de entorno: se configura en `config
 | GET | `/directorio/:id`, `/directorio/:id/vcard` | Con sesión | Tarjeta de contacto con QR, y su vCard |
 | GET | `/firma` | Con sesión | Firma de correo de la persona |
 | GET | `/peticiones` | Con sesión | Peticiones internas: el formulario de soporte informático y el enlace a Microsoft Forms |
-| POST | `/peticiones/soporte` | Con sesión | Revisa el formulario de soporte y enseña lo escrito (prueba: no se envía) |
+| POST | `/peticiones/soporte` | Con sesión | Envía el formulario de soporte por correo a Informática desde el buzón de la persona |
 | GET | `/account/apps` | Con sesión | Aplicaciones con permisos sobre la cuenta |
 | GET | `/account/sharing` | Con sesión | Archivos de OneDrive que llegan fuera del Ayuntamiento |
 | POST | `/account/sharing/:item/permissions/:permission/remove` | Con sesión | Dejar de compartir uno |

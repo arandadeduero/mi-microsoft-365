@@ -27,6 +27,7 @@ Object.assign(process.env, {
   AWS_SECRET_ACCESS_KEY: 'test-secret-key',
   FROM_EMAIL: 'no-reply@example.test',
   ADMIN_EMAIL: 'admin@example.test',
+  IT_SUPPORT_EMAIL: 'soporte@example.test',
   // High enough that only the rate limit tests, which lower it, ever hit it
   RESET_RATE_LIMIT: '1000',
   PASSWORD_MAX_AGE_DAYS: '90',

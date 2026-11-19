@@ -3,12 +3,8 @@
  *
  * - GET /peticiones - what a person can ask for inside the Ayuntamiento: the
  *   IT support form (config/internalRequests.js) and a link to a Microsoft Form
- * - POST /peticiones/soporte - check the support form and show what was typed
- *
- * shortcut: it is a trial, so the support form is checked and shown back but
- * sent nowhere and kept nowhere (only that it was filled in is audited); where
- * it goes (email, a list, Planner, the Form) is decided later, in one place:
- * the end of the POST handler.
+ * - POST /peticiones/soporte - send the support form to IT_SUPPORT_EMAIL, from the
+ *   person's own mailbox so that the answer comes back to them (like /equipo)
  */
 
 const express = require('express');
@@ -18,7 +14,7 @@ const REQUESTS = require('../config/internalRequests');
 const { isAuthenticated } = require('../middleware/auth');
 const { userError } = require('../middleware/errorHandler');
 const { auditRequest } = require('../services/auditService');
-const { getUserProfile } = require('../services/graphService');
+const { getUserProfile, sendEmail } = require('../services/graphService');
 const { readRequestValues } = require('../services/requestForm');
 
 // What the profile can fill in, by the names config/internalRequests.js uses
@@ -49,6 +45,8 @@ router.get('/peticiones', isAuthenticated, async (req, res, next) => {
       title: 'Peticiones internas',
       currentPage: 'requests',
       support,
+      sent: req.query.sent === 'soporte',
+      supportEmail: appConfig.IT_SUPPORT_EMAIL,
       prefill: Object.fromEntries(support.fields.filter(field => field.prefill).map(field => [field.name, prefill[field.prefill]])),
       formLink: formLink(),
       contact: { name: profile.displayName || req.session.account.name, email: profile.mail || req.session.account.username, department: profile.department || '' },
@@ -62,17 +60,40 @@ router.post('/peticiones/soporte', isAuthenticated, async (req, res, next) => {
   try {
     const support = REQUESTS.soporte;
     const values = readRequestValues(support, req.body);
+
+    // The department is not typed: it comes from the profile, when it can be read
+    let department = '';
+    try {
+      department = (await getUserProfile(req.session.accessToken)).department || '';
+    } catch (error) {
+      if (error.graphStatus === 401) throw error;
+    }
+    const { account } = req.session;
+    const body = [
+      `${account.name || account.username} (${account.username}) pide desde el portal: ${support.title}.`,
+      ...(department ? [`Departamento: ${department}`] : []),
+      '',
+      ...values.filter(([, value]) => value).map(([label, value]) => `${label}: ${value}`),
+    ].join('\n');
+    // A subject is one line; what was typed may not be
+    const subject = String(req.body.subject || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+
+    try {
+      await sendEmail(req.session.accessToken, {
+        to: appConfig.IT_SUPPORT_EMAIL,
+        subject: `[${appConfig.APP_NAME}] ${support.title}: ${subject}`,
+        body,
+      });
+    } catch (error) {
+      if (error.graphStatus === 401) throw error;
+      throw userError(502, `No se ha podido enviar la petición. Escribe directamente a ${appConfig.IT_SUPPORT_EMAIL}.`);
+    }
     // What was asked for, not what was typed
     auditRequest(req, support.event, { kind: 'soporte' });
-    res.render('internal-request-sent', {
-      title: 'Soporte informático',
-      currentPage: 'requests',
-      request: support,
-      values: values.filter(([, value]) => value),
-      who: `${req.session.account.name || req.session.account.username} (${req.session.account.username})`,
-    });
+
+    res.redirect('/peticiones?sent=soporte');
   } catch (error) {
-    next(error instanceof Error ? error : userError(400, 'Revisa el formulario.'));
+    next(error);
   }
 });
 

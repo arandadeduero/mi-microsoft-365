@@ -53,6 +53,10 @@ module.exports = {
   // Recipient of the requests that have nobody else to go to
   ADMIN_EMAIL: process.env.ADMIN_EMAIL || 'glopez@arandadeduero.es',
 
+  // Mailbox that receives the IT support form of /peticiones (the team requests of
+  // /equipo still go to ADMIN_EMAIL)
+  IT_SUPPORT_EMAIL: process.env.IT_SUPPORT_EMAIL || 'informatica@arandadeduero.es',
+
   // Public address of the app. Links sent by email are built from
   // configuration and not from the request's Host header, which whoever
   // sends the request controls.

@@ -9,17 +9,17 @@
       <div class="card shadow-sm border-0 app-panel">
         <div class="card-body p-4">
           <h2 class="h4 mb-2"><%= support.title %></h2>
-          <div class="alert alert-info py-2 small" role="note">
-            <strong>Prueba.</strong> De momento el formulario solo se revisa y se te enseña lo que has escrito: <strong>todavía no se envía a nadie</strong>. Si es urgente, llama o escribe a Informática como siempre.
-          </div>
+          <% if (sent) { %>
+            <div class="alert alert-success" role="status">Petición enviada. Informática la recibe en <%= supportEmail %> y te contestará a tu correo.</div>
+          <% } %>
           <p class="text-muted"><%= support.intro %></p>
           <p class="small text-muted mb-3">
-            Se enviará a nombre de <strong><%= contact.name %></strong> (<%= contact.email %><% if (contact.department) { %>, <%= contact.department %><% } %>). Estos datos salen de tu perfil y no se escriben aquí.
+            Se envía a nombre de <strong><%= contact.name %></strong> (<%= contact.email %><% if (contact.department) { %>, <%= contact.department %><% } %>). Estos datos salen de tu perfil y no se escriben aquí.
           </p>
           <form action="/peticiones/soporte" method="POST" class="row g-3">
             <input type="hidden" name="_csrf" value="<%= csrfToken() %>">
             <%- include('partials/request-fields', { kind: 'soporte', fields: support.fields, prefill: prefill }) %>
-            <div class="col-12"><button type="submit" class="btn btn-primary">Revisar mi petición</button></div>
+            <div class="col-12"><button type="submit" class="btn btn-primary">Enviar a Informática</button></div>
           </form>
         </div>
       </div>
