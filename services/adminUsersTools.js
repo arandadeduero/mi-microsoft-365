@@ -30,9 +30,6 @@ const SPECIAL_ACCOUNTS = new Set([
 
 const TARGET_TIMEZONE = 'Romance Standard Time';
 
-const WELCOME_GUIDE_DEFAULT_URL =
-  'https://aytoarandaduero-my.sharepoint.com/:f:/g/personal/glopez_arandadeduero_es/IgDxAF3YuiHuRILrP8vCkGRnAYrtXe0_jzxtD_l9ZON1CGg?e=86PJVY';
-
 // Readable Word-NNNN-Word Spanish wordlist (meets Entra ID complexity: upper + lower + digits, 12+ chars)
 const PASSWORD_WORDS = [
   'Acebo', 'Aguila', 'Alamo', 'Almez', 'Aluda', 'Arbol', 'Arco', 'Arena',
@@ -117,7 +114,7 @@ function buildResetCredentialLinks(
   password,
   {
     intranetUrl = 'https://aytoarandaduero.sharepoint.com/',
-    welcomeUrl = WELCOME_GUIDE_DEFAULT_URL,
+    welcomeUrl = '',
   } = {},
 ) {
   const subject = 'Microsoft365';
@@ -127,8 +124,7 @@ function buildResetCredentialLinks(
     'Recuerda que la contraseña de Microsoft365 es diferente a la de tu actual correo corporativo y a la de tu ordenador. Esta contraseña es temporal y deberás cambiarla en tu primer inicio de sesión.',
     '\n',
     `url: ${intranetUrl}`,
-    '\n',
-    `Sigue la guía de bienvenida en este enlace ${welcomeUrl}`,
+    ...(welcomeUrl ? ['\n', `Sigue la guía de bienvenida en este enlace ${welcomeUrl}`] : []),
   ].join('\n');
 
   const encodedSubject = encodeURIComponent(subject);
@@ -518,7 +514,6 @@ module.exports = {
   AUTO_GROUPS,
   SPECIAL_ACCOUNTS,
   TARGET_TIMEZONE,
-  WELCOME_GUIDE_DEFAULT_URL,
   PASSWORD_WORDS,
   normalizeUpn,
   isRoomUser,

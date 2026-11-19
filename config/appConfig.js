@@ -27,14 +27,15 @@ module.exports = {
   // The organization's intranet, linked from the home page and the help page
   INTRANET_URL: process.env.INTRANET_URL || 'https://aytoarandaduero.sharepoint.com',
 
-  // Welcome guide linked from admin password-reset credential emails
-  WELCOME_GUIDE_URL: process.env.WELCOME_GUIDE_URL || 'https://aytoarandaduero-my.sharepoint.com/:f:/g/personal/glopez_arandadeduero_es/IgDxAF3YuiHuRILrP8vCkGRnAYrtXe0_jzxtD_l9ZON1CGg?e=86PJVY',
+  // Welcome guide linked from admin password-reset credential emails. No default:
+  // it is a sharing link, so it lives in .env only; without it the email leaves the line out
+  WELCOME_GUIDE_URL: process.env.WELCOME_GUIDE_URL || '',
 
-  // SharePoint sharing URL of the HR users Excel file (ACTIVOS / CONCEJALES),
-  // read directly by /admin/usuarios/excel so the admin does not have to upload it
-  USERS_EXCEL_URL: process.env.USERS_EXCEL_URL !== undefined
-    ? process.env.USERS_EXCEL_URL
-    : 'https://aytoarandaduero.sharepoint.com/:x:/s/gr-personal/IQC5DRK-adTlSJkHPU5LEc43AcZZU0LtY1sVYlcG40AOQqo?e=Z1Hsoc',
+  // SharePoint sharing URL of the HR users Excel file (ACTIVOS / CONCEJALES), read
+  // directly by /admin/usuarios/excel and checked once a day. No default: it is a
+  // sharing link, so it lives in .env only; without it the admin uploads the file
+  // and there is no daily check
+  USERS_EXCEL_URL: process.env.USERS_EXCEL_URL || '',
 
   // Address of the person at the top of the org chart. Without them in the
   // directory, the top is whoever has people below and no manager.
