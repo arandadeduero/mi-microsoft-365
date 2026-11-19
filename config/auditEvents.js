@@ -39,6 +39,8 @@ module.exports = {
   'admin.group_member_added': 'Miembro añadido a un grupo desde Administración',
   'admin.group_member_removed': 'Miembro quitado de un grupo desde Administración',
   'admin.group_members_bulk_added': 'Varias personas añadidas a un grupo de una vez desde Administración',
+  'excel.drift_checked': 'Comprobación diaria del Excel de usuarios hecha (solo números, no cambia nada)',
+  'excel.drift_failed': 'La comprobación diaria del Excel de usuarios no ha podido leer el archivo',
   'admin.group_owner_added': 'Propietario añadido a un grupo desde Administración',
   'admin.group_owner_removed': 'Propietario quitado de un grupo desde Administración',
   'admin.group_members_added': 'Usuarios añadidos a un grupo desde Administración',
