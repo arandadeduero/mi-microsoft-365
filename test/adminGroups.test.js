@@ -95,7 +95,7 @@ test('editing sends only what changed, and an emptied description becomes null',
 
 test.serial('non-admins receive 403 on every /admin/grupos route', async t => {
   const { agent, csrf } = await signInAs(t, USER, { admin: false });
-  for (const p of ['/admin/grupos', '/admin/grupos/nuevo', `/admin/grupos/${GID_INFO}`]) {
+  for (const p of ['/admin/grupos', '/admin/grupos-distribucion', '/admin/grupos/nuevo', `/admin/grupos/${GID_INFO}`]) {
     await agent.get(p).expect(403);
   }
   await agent.post('/admin/grupos').set('X-CSRF-Token', csrf).type('form').send({ displayName: 'X' }).expect(403);
@@ -119,6 +119,27 @@ test.serial('the list shows every kind of group and filters by text and kind', a
   const byKind = await agent.get('/admin/grupos').query({ tipo: 'Microsoft 365' }).expect(200);
   t.regex(byKind.text, /Informática/);
   t.notRegex(byKind.text, /Lista prensa/);
+});
+
+test.serial('the distribution lists page shows only the Exchange lists, with a way to see who is in them', async t => {
+  const { agent } = await signInAs(t, ADMIN, { admin: true });
+  stubGroupPages();
+
+  const res = await agent.get('/admin/grupos-distribucion').expect(200);
+  t.regex(res.text, /Lista prensa/);
+  t.regex(res.text, /prensa@arandadeduero\.es/);
+  t.regex(res.text, new RegExp(`href="/admin/grupos/${GID_LIST}"`));
+  t.notRegex(res.text, /Informática/);
+  t.notRegex(res.text, /Todos los de Obras/);
+  // What it can and cannot do is said, and the way to make one that can be managed here is offered
+  t.regex(res.text, /Aquí solo se pueden consultar/);
+  t.regex(res.text, /href="\/admin\/grupos\/nuevo"/);
+  t.regex(res.text, /href="\/admin\/grupos-distribucion"/);
+
+  // The list is read-only: its page shows who is in it and offers no change
+  const detail = await agent.get(`/admin/grupos/${GID_LIST}`).expect(200);
+  t.regex(detail.text, /Ana Pérez/);
+  t.notRegex(detail.text, /Añadir miembro/);
 });
 
 test.serial('creating a Microsoft 365 group sends the right payload with the admin as owner', async t => {
