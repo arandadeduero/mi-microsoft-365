@@ -115,6 +115,7 @@
             <a href="/admin/usuarios" class="<%= groupClass('audit') %> nav-link-admin" role="button" data-bs-toggle="dropdown" aria-expanded="false">Administración</a>
             <ul class="dropdown-menu">
               <li><a class="dropdown-item<%= isUsersAdmin ? ' active' : '' %>" href="/admin/usuarios">Usuarios</a></li>
+              <li><a class="dropdown-item<%= here === '/admin/grupos' || here.startsWith('/admin/grupos/') ? ' active' : '' %>" href="/admin/grupos">Grupos</a></li>
               <li><a class="<%= itemClass('/admin/licencias') %>" href="/admin/licencias">Licencias</a></li>
               <li><a class="<%= itemClass('/admin/solicitudes') %>" href="/admin/solicitudes">Solicitudes pendientes</a></li>
               <li><a class="<%= itemClass('/admin/salas') %>" href="/admin/salas">Ocupación de salas</a></li>

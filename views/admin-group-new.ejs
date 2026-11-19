@@ -1,0 +1,56 @@
+<%- include('partials/header') %>
+
+<main class="container py-4 page-shell page-error">
+  <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+    <h1 class="h2 mb-0 page-title">Nuevo grupo</h1>
+    <a href="/admin/grupos" class="btn btn-outline-secondary btn-sm">&larr; Volver a los grupos</a>
+  </div>
+
+  <% if (errorMsg) { %><div class="alert alert-danger" role="alert"><%= errorMsg %></div><% } %>
+
+  <div class="card shadow-sm border-0 app-panel">
+    <div class="card-body p-4">
+      <form action="/admin/grupos" method="POST" class="row g-3">
+        <input type="hidden" name="_csrf" value="<%= csrfToken() %>">
+        <div class="col-12">
+          <label for="type" class="form-label">Tipo de grupo</label>
+          <select id="type" name="type" class="form-select">
+            <option value="unified" <%= form.type !== 'security' ? 'selected' : '' %>>Microsoft 365: correo compartido, calendario, archivos y, si se quiere, un equipo de Teams</option>
+            <option value="security" <%= form.type === 'security' ? 'selected' : '' %>>Seguridad: solo sirve para dar permisos a un conjunto de personas</option>
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label for="displayName" class="form-label">Nombre</label>
+          <input type="text" id="displayName" name="displayName" value="<%= form.displayName || '' %>" class="form-control" maxlength="256" placeholder="Informática" required>
+        </div>
+        <div class="col-md-6">
+          <label for="mailNickname" class="form-label">Alias de correo</label>
+          <div class="input-group">
+            <input type="text" id="mailNickname" name="mailNickname" value="<%= form.mailNickname || '' %>" class="form-control" maxlength="64"
+                   pattern="<%= groupPrefix %>.+" placeholder="<%= groupPrefix %>informatica" title="Tiene que empezar por «<%= groupPrefix %>» y seguir con algo, por ejemplo <%= groupPrefix %>informatica">
+            <% if (domain) { %><span class="input-group-text">@<%= domain %></span><% } %>
+          </div>
+          <div class="form-text">Siempre empieza por <code><%= groupPrefix %></code>. Si lo dejas vacío se forma con el nombre. Solo letras sin tilde, números, puntos y guiones; no se puede repetir.</div>
+        </div>
+        <div class="col-12">
+          <label for="description" class="form-label">Descripción <span class="text-muted">(opcional)</span></label>
+          <textarea id="description" name="description" rows="2" class="form-control" maxlength="1024"><%= form.description || '' %></textarea>
+        </div>
+        <div class="col-12">
+          <label for="visibility" class="form-label">Visibilidad <span class="text-muted">(solo grupos de Microsoft 365)</span></label>
+          <select id="visibility" name="visibility" class="form-select">
+            <% Object.keys(visibilities).forEach(function(v) { %>
+              <option value="<%= v %>" <%= (form.visibility || 'Private') === v ? 'selected' : '' %>><%= visibilities[v] %></option>
+            <% }); %>
+          </select>
+        </div>
+        <div class="col-12">
+          <p class="text-muted small mb-2">Tú serás el primer propietario. Después podrás añadir más propietarios y los miembros.</p>
+          <button type="submit" class="btn btn-primary">Crear grupo</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</main>
+
+<%- include('partials/footer') %>
