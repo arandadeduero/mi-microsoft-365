@@ -1,0 +1,34 @@
+test/audit-viewer.test.js
+  s_fce2362ad8a293::t_9729fc89fae370 56,67,73,89,94-95,97,106,112,116,120,125,134,146-147,159,174
+routes/adminUsers.js
+  s_fce2362ad8a293::t_eb58b17b6c4651 25,30-31,262-283
+  s_fce2362ad8a293::t_45f21908d202d5 284-288
+views/partials/header.ejs
+  s_fce2362ad8a293::t_eb58b17b6c4651 118,129
+views/audit.ejs
+  s_fce2362ad8a293::t_eb58b17b6c4651 14,34-35
+AGENTS.md
+  s_fce2362ad8a293::t_17e9aa8b349de8 44,46
+routes/admin.js
+  s_fce2362ad8a293::t_e7c904571a0d43 5,23,25,46,50,67-75,94,97,111-112,114
+test/admin-pages.test.js
+  s_fce2362ad8a293::t_9729fc89fae370 89,95,107,116,128,339-350,354
+README.md
+  s_fce2362ad8a293::t_04c80fe574fa6f 579-581,699
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "315c5c5342c22e6b250c6a08a769f1eac1a40b17",
+  "prompts": {},
+  "sessions": {
+    "s_fce2362ad8a293": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "abbfdd8e-3213-4c40-8035-e7366626bc8b",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Guillermo López <willyaranda@gmail.com>"
+    }
+  }
+}
