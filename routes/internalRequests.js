@@ -3,7 +3,7 @@
  *
  * - GET /peticiones - what a person can ask for inside the Ayuntamiento: the
  *   IT support form (config/internalRequests.js) and a link to a Microsoft Form
- * - POST /peticiones/soporte - send the support form to IT by email, from the
+ * - POST /peticiones/soporte - send the support form to IT_SUPPORT_EMAIL, from the
  *   person's own mailbox so that the answer comes back to them (like /equipo)
  */
 
@@ -46,7 +46,7 @@ router.get('/peticiones', isAuthenticated, async (req, res, next) => {
       currentPage: 'requests',
       support,
       sent: req.query.sent === 'soporte',
-      adminEmail: appConfig.ADMIN_EMAIL,
+      supportEmail: appConfig.IT_SUPPORT_EMAIL,
       prefill: Object.fromEntries(support.fields.filter(field => field.prefill).map(field => [field.name, prefill[field.prefill]])),
       formLink: formLink(),
       contact: { name: profile.displayName || req.session.account.name, email: profile.mail || req.session.account.username, department: profile.department || '' },
@@ -80,13 +80,13 @@ router.post('/peticiones/soporte', isAuthenticated, async (req, res, next) => {
 
     try {
       await sendEmail(req.session.accessToken, {
-        to: appConfig.ADMIN_EMAIL,
+        to: appConfig.IT_SUPPORT_EMAIL,
         subject: `[${appConfig.APP_NAME}] ${support.title}: ${subject}`,
         body,
       });
     } catch (error) {
       if (error.graphStatus === 401) throw error;
-      throw userError(502, `No se ha podido enviar la petición. Escribe directamente a ${appConfig.ADMIN_EMAIL}.`);
+      throw userError(502, `No se ha podido enviar la petición. Escribe directamente a ${appConfig.IT_SUPPORT_EMAIL}.`);
     }
     // What was asked for, not what was typed
     auditRequest(req, support.event, { kind: 'soporte' });

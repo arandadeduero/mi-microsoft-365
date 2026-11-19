@@ -77,7 +77,8 @@ test.serial('a valid support form goes to IT from my mailbox, and only its kind 
   const [call] = http.callsTo('post', '/me/sendMail');
   t.is(http.callsTo('post', '/me/sendMail').length, 1);
   const { message } = call.data;
-  t.is(message.toRecipients[0].emailAddress.address, 'admin@example.test');
+  // To the IT support mailbox, not to the administrator of the portal
+  t.is(message.toRecipients[0].emailAddress.address, 'soporte@example.test');
   t.is(message.subject, '[Mi Microsoft 365] Soporte informático: La impresora no imprime');
   t.is(message.body.contentType, 'Text');
   for (const line of [
@@ -90,7 +91,7 @@ test.serial('a valid support form goes to IT from my mailbox, and only its kind 
   t.is(event.kind, 'soporte');
   t.false(JSON.stringify(event).includes('impresora'));
 
-  t.regex((await agent.get('/peticiones?sent=soporte').expect(200)).text, /Petición enviada\. Informática la recibe en admin@example\.test/);
+  t.regex((await agent.get('/peticiones?sent=soporte').expect(200)).text, /Petición enviada\. Informática la recibe en soporte@example\.test/);
   t.notRegex((await agent.get('/peticiones').expect(200)).text, /Petición enviada/);
 });
 
@@ -107,7 +108,7 @@ test.serial('if the email cannot be sent, the person is told and nothing is audi
   http.fail('post', '/me/sendMail', 500);
   const events = auditEvents('request.support').length;
   const res = await post(VALID).expect(502);
-  t.regex(res.text, /No se ha podido enviar la petición\. Escribe directamente a admin@example\.test/);
+  t.regex(res.text, /No se ha podido enviar la petición\. Escribe directamente a soporte@example\.test/);
   t.is(auditEvents('request.support').length, events);
 });
 
