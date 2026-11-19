@@ -1,0 +1,22 @@
+routes/index.js
+  h_3aa52f59e1a7c5 28,31,79-87,96,337-338,343-348,352-354
+services/graphService.js
+  h_3aa52f59e1a7c5 134-162,351-372,1410,1434
+test/authenticated.test.js
+  h_3aa52f59e1a7c5 60,62,71-75,83-92,430-440,444
+test/graphService.test.js
+  h_3aa52f59e1a7c5 52-67,92-106
+views/profile.ejs
+  h_3aa52f59e1a7c5 86,96-123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9543e3325d49e56aef4cbdefaef78c475ff9d6eb",
+  "prompts": {},
+  "humans": {
+    "h_3aa52f59e1a7c5": {
+      "author": "Guillermo López <willyaranda@gmail.com>"
+    }
+  }
+}
