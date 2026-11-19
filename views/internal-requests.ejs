@@ -1,0 +1,49 @@
+<%- include('partials/header') %>
+
+<main class="container py-4 page-shell page-profile">
+  <h1 class="h2 mb-2 page-title">Peticiones internas</h1>
+  <p class="text-muted mb-4">Lo que puedes pedir dentro del Ayuntamiento, en un sitio. Elige qué necesitas.</p>
+
+  <div class="row g-4">
+    <div class="col-lg-8">
+      <div class="card shadow-sm border-0 app-panel">
+        <div class="card-body p-4">
+          <h2 class="h4 mb-2"><%= support.title %></h2>
+          <div class="alert alert-info py-2 small" role="note">
+            <strong>Prueba.</strong> De momento el formulario solo se revisa y se te enseña lo que has escrito: <strong>todavía no se envía a nadie</strong>. Si es urgente, llama o escribe a Informática como siempre.
+          </div>
+          <p class="text-muted"><%= support.intro %></p>
+          <p class="small text-muted mb-3">
+            Se enviará a nombre de <strong><%= contact.name %></strong> (<%= contact.email %><% if (contact.department) { %>, <%= contact.department %><% } %>). Estos datos salen de tu perfil y no se escriben aquí.
+          </p>
+          <form action="/peticiones/soporte" method="POST" class="row g-3">
+            <input type="hidden" name="_csrf" value="<%= csrfToken() %>">
+            <%- include('partials/request-fields', { kind: 'soporte', fields: support.fields, prefill: prefill }) %>
+            <div class="col-12"><button type="submit" class="btn btn-primary">Revisar mi petición</button></div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-4">
+      <% if (formLink) { %>
+        <div class="card shadow-sm border-0 app-panel">
+          <div class="card-body p-4">
+            <h2 class="h5 mb-2">Otro formulario</h2>
+            <p class="text-muted small">Este se rellena en Microsoft Forms, en otra pestaña.</p>
+            <a href="<%= formLink %>" target="_blank" rel="noopener" class="btn btn-outline-primary">Abrir el formulario</a>
+          </div>
+        </div>
+      <% } %>
+      <div class="card shadow-sm border-0 app-panel <%= formLink ? 'mt-4' : '' %>">
+        <div class="card-body p-4">
+          <h2 class="h5 mb-2">¿Eres responsable de un equipo?</h2>
+          <p class="text-muted small mb-2">Altas, bajas, equipos de Teams e invitados de fuera tienen su propia página.</p>
+          <a href="/equipo" class="btn btn-outline-secondary btn-sm">Mi equipo y solicitudes</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<%- include('partials/footer') %>

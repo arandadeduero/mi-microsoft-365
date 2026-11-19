@@ -37,6 +37,10 @@ module.exports = {
   // and there is no daily check
   USERS_EXCEL_URL: process.env.USERS_EXCEL_URL || '',
 
+  // Microsoft Form offered on /peticiones next to the support form. It is a link
+  // to a form of the organization: .env only, not in the code. Empty: not shown
+  INTERNAL_REQUESTS_FORM_URL: process.env.INTERNAL_REQUESTS_FORM_URL || '',
+
   // Address of the person at the top of the org chart. Without them in the
   // directory, the top is whoever has people below and no manager.
   ORG_CHART_ROOT: process.env.ORG_CHART_ROOT || 'alinaje@arandadeduero.es',

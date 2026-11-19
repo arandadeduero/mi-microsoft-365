@@ -1,0 +1,16 @@
+<%# The fields of a form made from a config entry. Locals: kind, fields, prefill (value by field name) %>
+<% fields.forEach(function(field) { %>
+  <% const id = kind + '-' + field.name; const value = (prefill && prefill[field.name]) || ''; %>
+  <div class="<%= field.type === 'textarea' ? 'col-12' : 'col-md-6' %>">
+    <label for="<%= id %>" class="form-label"><%= field.label %><% if (field.required) { %> *<% } %></label>
+    <% if (field.type === 'textarea') { %>
+      <textarea class="form-control" id="<%= id %>" name="<%= field.name %>" rows="3" placeholder="<%= field.placeholder || '' %>" <%= field.required ? 'required' : '' %>><%= value %></textarea>
+    <% } else if (field.type === 'select') { %>
+      <select class="form-select" id="<%= id %>" name="<%= field.name %>">
+        <% field.options.forEach(function(option) { %><option<%= option === value ? ' selected' : '' %>><%= option %></option><% }); %>
+      </select>
+    <% } else { %>
+      <input type="<%= field.type || 'text' %>" class="form-control" id="<%= id %>" name="<%= field.name %>" value="<%= value %>" placeholder="<%= field.placeholder || '' %>" <%= field.required ? 'required' : '' %>>
+    <% } %>
+  </div>
+<% }); %>

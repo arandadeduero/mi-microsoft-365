@@ -97,7 +97,7 @@ test.serial('the menu groups the pages, names the user, and only shows what appl
 
   const menu = res.text.split('<nav ')[1].split('</nav>')[0];
   t.true(menu.includes('href="/" class="nav-link active"'));
-  for (const href of ['/account', '/account/groups', '/account/sign-ins', '/profile/me/edit', '/profile/me/auto-reply', '/directorio', '/organigrama', '/groups', '/groups/requests', '/groups/owned', '/teams', '/salas', '/ayuda', '/blog']) {
+  for (const href of ['/account', '/account/groups', '/account/sign-ins', '/profile/me/edit', '/profile/me/auto-reply', '/directorio', '/organigrama', '/groups', '/groups/requests', '/groups/owned', '/teams', '/salas', '/peticiones', '/ayuda', '/blog']) {
     t.true(menu.includes(`href="${href}"`), href);
   }
   // Nothing is configured for shared mailboxes, and alice holds no directory role

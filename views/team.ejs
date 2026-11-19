@@ -53,20 +53,7 @@
             <p class="text-muted"><%= request.intro %></p>
             <form action="/equipo/solicitud/<%= kind %>" method="POST" class="row g-3">
               <input type="hidden" name="_csrf" value="<%= csrfToken() %>">
-              <% request.fields.forEach(function(field) { %>
-                <div class="<%= field.type === 'textarea' ? 'col-12' : 'col-md-6' %>">
-                  <label for="<%= kind %>-<%= field.name %>" class="form-label"><%= field.label %><% if (field.required) { %> *<% } %></label>
-                  <% if (field.type === 'textarea') { %>
-                    <textarea class="form-control" id="<%= kind %>-<%= field.name %>" name="<%= field.name %>" rows="3" placeholder="<%= field.placeholder || '' %>" <%= field.required ? 'required' : '' %>></textarea>
-                  <% } else if (field.type === 'select') { %>
-                    <select class="form-select" id="<%= kind %>-<%= field.name %>" name="<%= field.name %>">
-                      <% field.options.forEach(function(option) { %><option><%= option %></option><% }); %>
-                    </select>
-                  <% } else { %>
-                    <input type="<%= field.type || 'text' %>" class="form-control" id="<%= kind %>-<%= field.name %>" name="<%= field.name %>" placeholder="<%= field.placeholder || '' %>" <%= field.required ? 'required' : '' %>>
-                  <% } %>
-                </div>
-              <% }); %>
+              <%- include('partials/request-fields', { kind: kind, fields: request.fields, prefill: {} }) %>
               <div class="col-12"><button type="submit" class="btn btn-primary">Enviar a Informática</button></div>
             </form>
           </div>
