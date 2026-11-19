@@ -1,0 +1,16 @@
+AGENTS.md
+  h_3aa52f59e1a7c5 1
+README.md
+  h_3aa52f59e1a7c5 320
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8978b3bb1b1c5d556e33be284e6ea4c1955e606c",
+  "prompts": {},
+  "humans": {
+    "h_3aa52f59e1a7c5": {
+      "author": "Guillermo López <willyaranda@gmail.com>"
+    }
+  }
+}
