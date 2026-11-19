@@ -12,7 +12,7 @@ const test = require('ava').default;
 const request = require('supertest');
 const { stubAxios, stubMsal, signInAgent, getCsrfToken, auditEvents, httpError } = require('./helpers/stubs');
 const { resetGraphCaches } = require('../services/graphService');
-const { describeAdminGroup, diffGroupEdit, toMailAlias, validateNewGroup } = require('../services/adminGroups');
+const { describeAdminGroup, diffGroupEdit, toMailAlias, validateNewGroup, parseAddressList, MAX_BULK } = require('../services/adminGroups');
 
 const http = stubAxios();
 const msal = stubMsal();
@@ -81,6 +81,15 @@ test('mail aliases are plain ASCII and groups are described by what Graph can do
   for (const alias of ['obras', 'gr', 'gr-', 'xgr-obras', 'Información']) {
     t.regex(validateNewGroup({ displayName: 'Obras', mailNickname: alias }).error, /gr-/, alias);
   }
+});
+
+test('a pasted list of addresses is read by lines, commas and semicolons, also as copied from Outlook', t => {
+  const { addresses, invalid } = parseAddressList('Ana@arandadeduero.es\r\nLuis Gómez <luis@arandadeduero.es>; pepe@arandadeduero.es,\n\n  ana@arandadeduero.es  \nesto no es un correo\nfalta@');
+  // Lowercase, once each, in order
+  t.deepEqual(addresses, ['ana@arandadeduero.es', 'luis@arandadeduero.es', 'pepe@arandadeduero.es']);
+  t.deepEqual(invalid, ['esto no es un correo', 'falta@']);
+  t.deepEqual(parseAddressList(''), { addresses: [], invalid: [] });
+  t.deepEqual(parseAddressList(undefined), { addresses: [], invalid: [] });
 });
 
 test('editing sends only what changed, and an emptied description becomes null', t => {
@@ -284,4 +293,84 @@ test.serial('members and owners are added by address and removed by ID', async t
   await post('miembros', { user: 'nadie@arandadeduero.es' });
   t.is(http.callsTo('post', `/v1.0/groups/${GID_INFO}/members/$ref`).length, before);
   t.regex((await agent.get(`/admin/grupos/${GID_INFO}`)).text, /No se ha encontrado ese usuario/);
+});
+
+const BULK = (gid) => `/admin/grupos/${gid}/miembros/lote`;
+
+test.serial('the bulk add shows what would happen and changes nothing until it is confirmed', async t => {
+  const { agent, csrf } = await signInAs(t, ADMIN, { admin: true });
+  stubGroupPages();
+  http.on('get', '/v1.0/users/ana%40arandadeduero.es', { id: UID_ANA, displayName: 'Ana Pérez', userPrincipalName: 'ana@arandadeduero.es' });
+  http.on('get', '/v1.0/users/carl%40arandadeduero.es', { id: UID_CARL, displayName: 'Carl Nuevo', userPrincipalName: 'carl@arandadeduero.es' });
+
+  const res = await agent.post(`${BULK(GID_INFO)}/vista-previa`).set('X-CSRF-Token', csrf).type('form')
+    .send({ addresses: 'ana@arandadeduero.es\nCarl <carl@arandadeduero.es>\nnadie@arandadeduero.es\nesto no es un correo' }).expect(200);
+
+  t.regex(res.text, /<strong>1<\/strong> de <strong>4<\/strong> se añadirán/);
+  t.regex(res.text, /Ya es miembro/);
+  t.regex(res.text, /Se añadirá/);
+  t.regex(res.text, /No se ha encontrado/);
+  t.regex(res.text, /esto no es un correo/);
+  // Only the person who is new travels to the confirmation
+  t.regex(res.text, new RegExp(`name="userIds" value="${UID_CARL}"`));
+  t.notRegex(res.text, new RegExp(`name="userIds" value="${UID_ANA}"`));
+  t.is(http.calls.filter(c => c.method === 'post' && c.url.includes('/groups/')).length, 0);
+});
+
+test.serial('confirming adds the ones sent, counts failures, and audits only the numbers', async t => {
+  const { agent, csrf } = await signInAs(t, ADMIN, { admin: true });
+  stubGroupPages();
+  http.on('post', `/v1.0/groups/${GID_INFO}/members/$ref`, ({ data }) => {
+    if (data['@odata.id'].includes(UID_ANA)) throw httpError(500);
+    return {};
+  });
+
+  await agent.post(BULK(GID_INFO)).set('X-CSRF-Token', csrf).type('form')
+    .send({ userIds: [UID_CARL, UID_ANA, 'not-an-id', UID_CARL] }).expect(302);
+
+  // The repeated and the invalid ones never reach Graph
+  const sent = http.callsTo('post', `/v1.0/groups/${GID_INFO}/members/$ref`).map(c => c.data['@odata.id']);
+  t.is(sent.length, 2);
+  const page = await agent.get(`/admin/grupos/${GID_INFO}`).expect(200);
+  t.regex(page.text, /Añadidas 1 persona\./);
+  t.regex(page.text, /No se pudo añadir a 1 persona/);
+  const event = auditEvents('admin.group_members_bulk_added').at(-1);
+  t.like(event, { groupId: GID_INFO, added: 1, failed: 1 });
+  // Who was added is not recorded, only how many
+  t.false(JSON.stringify(event).includes(UID_CARL) || JSON.stringify(event).includes(UID_ANA));
+});
+
+test.serial('the bulk add refuses empty lists, too long lists, read-only groups and non-administrators', async t => {
+  const { agent, csrf } = await signInAs(t, ADMIN, { admin: true });
+  stubGroupPages();
+  const post = (path, form) => agent.post(path).set('X-CSRF-Token', csrf).type('form').send(form).expect(302);
+  const writes = () => http.calls.filter(c => c.method === 'post' && c.url.includes('/groups/')).length;
+
+  await post(`${BULK(GID_INFO)}/vista-previa`, { addresses: '   ' });
+  t.regex((await agent.get(`/admin/grupos/${GID_INFO}`)).text, /Escribe al menos un correo/);
+
+  const many = Array.from({ length: MAX_BULK + 1 }, (_, i) => `persona${i}@arandadeduero.es`).join('\n');
+  const lookups = () => http.calls.filter(c => c.method === 'get' && c.url.includes('/v1.0/users/')).length;
+  const before = lookups();
+  await post(`${BULK(GID_INFO)}/vista-previa`, { addresses: many });
+  t.regex((await agent.get(`/admin/grupos/${GID_INFO}`)).text, new RegExp(`Como mucho ${MAX_BULK} personas`));
+  t.is(lookups(), before);
+
+  // A dynamic group and an Exchange list are read-only: nothing is looked up or written
+  for (const gid of [GID_DYN, GID_LIST]) {
+    await post(`${BULK(gid)}/vista-previa`, { addresses: 'ana@arandadeduero.es' });
+    await post(BULK(gid), { userIds: [UID_ANA] });
+  }
+  t.is(writes(), 0);
+  t.is(lookups(), before);
+
+  await post(BULK(GID_INFO), {});
+  t.regex((await agent.get(`/admin/grupos/${GID_INFO}`)).text, /No había a nadie que añadir/);
+});
+
+test.serial('non-administrators cannot use the bulk add', async t => {
+  const { agent, csrf } = await signInAs(t, USER, { admin: false });
+  await agent.post(`${BULK(GID_INFO)}/vista-previa`).set('X-CSRF-Token', csrf).type('form').send({ addresses: 'a@arandadeduero.es' }).expect(403);
+  await agent.post(BULK(GID_INFO)).set('X-CSRF-Token', csrf).type('form').send({ userIds: [UID_ANA] }).expect(403);
+  t.is(http.callsTo('post', `/v1.0/groups/${GID_INFO}/members/$ref`).length, 0);
 });
