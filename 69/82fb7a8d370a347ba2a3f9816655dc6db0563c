@@ -1,0 +1,34 @@
+config/appConfig.js
+  s_fce2362ad8a293::t_7f566106e510d4 56-59
+AGENTS.md
+  s_fce2362ad8a293::t_7f566106e510d4 41
+views/internal-requests.ejs
+  s_fce2362ad8a293::t_7f566106e510d4 13
+test/helpers/env.js
+  s_fce2362ad8a293::t_7f566106e510d4 30
+README.md
+  s_fce2362ad8a293::t_7f566106e510d4 11,528
+test/internal-requests.test.js
+  s_fce2362ad8a293::t_7f566106e510d4 80-81
+  s_fce2362ad8a293::t_9b4d6224a3ed6a 94,111
+routes/internalRequests.js
+  s_fce2362ad8a293::t_7f566106e510d4 6,49,83,89
+.env.example
+  s_fce2362ad8a293::t_7f566106e510d4 75-77
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6982fb7a8d370a347ba2a3f9816655dc6db0563c",
+  "prompts": {},
+  "sessions": {
+    "s_fce2362ad8a293": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "abbfdd8e-3213-4c40-8035-e7366626bc8b",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Guillermo López <willyaranda@gmail.com>"
+    }
+  }
+}
