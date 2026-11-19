@@ -16,8 +16,7 @@ const { isAuthenticated } = require('../middleware/auth');
 const { userError } = require('../middleware/errorHandler');
 const { auditRequest } = require('../services/auditService');
 const { getDirectReports, sendEmail } = require('../services/graphService');
-
-const MAX_FIELD = 2000;
+const { readRequestValues } = require('../services/requestForm');
 
 router.get('/equipo', isAuthenticated, async (req, res, next) => {
   try {
@@ -43,19 +42,7 @@ router.post('/equipo/solicitud/:kind', isAuthenticated, async (req, res, next) =
       throw userError(404, 'Esa solicitud no existe.');
     }
 
-    const values = request.fields.map((field) => {
-      const value = String(req.body[field.name] || '').trim();
-      if (field.required && !value) {
-        throw userError(400, `Falta «${field.label}».`);
-      }
-      if (value.length > MAX_FIELD) {
-        throw userError(400, `«${field.label}» es demasiado largo.`);
-      }
-      if (field.type === 'select' && value && !field.options.includes(value)) {
-        throw userError(400, `«${field.label}» no es una opción válida.`);
-      }
-      return [field.label, value];
-    });
+    const values = readRequestValues(request, req.body);
 
     const { account } = req.session;
     const body = [

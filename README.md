@@ -8,6 +8,7 @@ Portal interno de autoservicio para los usuarios de Microsoft 365 del Ayuntamien
 - ✅ **Autenticación con Microsoft 365** - Flujo de código de autorización OAuth 2.0 con MSAL, para un solo inquilino (tenant)
 - ✅ **Perfil** - Perfil, foto, grupos, responsable y datos en bruto de Graph; cada usuario puede editar su puesto, teléfonos, oficina y foto. Los campos que Microsoft no deja cambiar a un usuario se muestran en solo lectura
 - ✅ **Directorio** - Directorio del personal con buscador, teléfonos y oficinas, exportable a Excel; cada persona tiene una tarjeta con código QR y vCard para guardarla en el móvil
+- ✅ **Peticiones internas** - La pestaña «Peticiones» (`/peticiones`) reúne lo que se puede pedir dentro del Ayuntamiento. Hoy: un formulario de **soporte informático** (tipo de problema, cuánto afecta, asunto, qué ocurre, equipo, dónde y teléfono, con la persona y los datos del perfil ya puestos) y un enlace a un formulario de Microsoft Forms. **Es una prueba:** el formulario se revisa y se enseña lo escrito, pero todavía no se envía ni se guarda en ningún sitio
 - ✅ **Mi firma de correo** - La firma se genera sola con los datos del perfil, en el formato del generador del Ayuntamiento ([firmas-correo](https://github.com/arandadeduero/firmas-correo)) y con el logo de la concejalía. Lo único que se elige es la concejalía, si el perfil no la dice; se copia con formato o como HTML
 - ✅ **Aplicaciones con acceso** - Qué aplicaciones tienen permisos sobre la cuenta del usuario y qué pueden hacer, en lenguaje llano
 - ✅ **Qué comparto fuera** - Archivos de OneDrive con enlaces para cualquiera o compartidos con direcciones externas, y un botón para dejar de compartirlos
@@ -519,6 +520,7 @@ No hay informe de cobertura: c8 no funciona en las versiones actuales de Node.js
 | `PROFILE_EDITABLE_FIELDS` | Campos del perfil que los usuarios pueden cambiar por sí mismos, de entre `mobilePhone`, `businessPhones`, `jobTitle` y `officeLocation`; el resto se muestra en solo lectura | `mobilePhone,businessPhones` | No (por defecto: los cuatro) |
 | `USERS_EXCEL_URL` | Enlace de SharePoint al Excel de personal (hojas `ACTIVOS` y `CONCEJALES`): `Administración → Usuarios → Excel` lo lee sin subir el archivo y, una vez al día, el servidor lo compara con Microsoft 365 (solo lectura, con el token de la aplicación, sin cambiar nada) y deja un aviso en `Usuarios` con cuántas bajas, altas, datos y responsables difieren. Necesita que la aplicación pueda leer el archivo (`Files.Read.All` o `Sites.Read.All`) y los usuarios. **Sin valor por defecto** (es un enlace de compartir): sin ella, el administrador sube el archivo a mano y no hay comprobación diaria | `https://org.sharepoint.com/:x:/s/rrhh/DOC` | No |
 | `WELCOME_GUIDE_URL` | Guía de bienvenida enlazada en el correo con las credenciales que prepara un administrador tras restablecer una contraseña. Es un enlace de compartir: solo en el `.env`. Sin ella, el correo omite esa línea | `https://org.sharepoint.com/:f:/s/rrhh/GUIA` | No |
+| `INTERNAL_REQUESTS_FORM_URL` | Enlace a un formulario de Microsoft Forms que se ofrece en «Peticiones internas». Es un enlace de la organización: solo en el `.env`. Sin ella, no se muestra la tarjeta | `https://forms.cloud.microsoft/Pages/ResponsePage.aspx?id=...` | No |
 | `SIGNATURE_IMAGES_URL` | Dirección de la que se cargan los logos de la firma de correo, en la vista previa y en la que se copia (debe ser pública y acabar en `/`; el CSP permite imágenes solo de ese origen) | `https://org.github.io/firmas-correo/images/` | No (por defecto: la del Ayuntamiento) |
 | `INTRANET_URL` | Dirección de la intranet de la organización, enlazada desde la página de inicio, la de ayuda y el pie | `https://example.sharepoint.com` | No (por defecto: la del Ayuntamiento) |
 | `ORG_CHART_ROOT` | Dirección de la persona que está en lo alto del organigrama; las cuentas que no dependen de ella se listan debajo del gráfico | `top-person@example.com` | No (por defecto: la del Ayuntamiento; si nadie tiene esa dirección, quien tenga gente a su cargo y ningún responsable) |
@@ -591,6 +593,8 @@ Quién puede usar `/blog` no es una variable de entorno: se configura en `config
 | GET | `/directorio/export.csv` | Con sesión | El directorio para Excel |
 | GET | `/directorio/:id`, `/directorio/:id/vcard` | Con sesión | Tarjeta de contacto con QR, y su vCard |
 | GET | `/firma` | Con sesión | Firma de correo de la persona |
+| GET | `/peticiones` | Con sesión | Peticiones internas: el formulario de soporte informático y el enlace a Microsoft Forms |
+| POST | `/peticiones/soporte` | Con sesión | Revisa el formulario de soporte y enseña lo escrito (prueba: no se envía) |
 | GET | `/account/apps` | Con sesión | Aplicaciones con permisos sobre la cuenta |
 | GET | `/account/sharing` | Con sesión | Archivos de OneDrive que llegan fuera del Ayuntamiento |
 | POST | `/account/sharing/:item/permissions/:permission/remove` | Con sesión | Dejar de compartir uno |

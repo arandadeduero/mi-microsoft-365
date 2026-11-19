@@ -102,6 +102,9 @@
           <li class="nav-item">
             <a href="/salas" class="nav-link <%= page === 'rooms' ? 'active' : '' %>">Salas</a>
           </li>
+          <li class="nav-item">
+            <a href="/peticiones" class="nav-link <%= page === 'requests' ? 'active' : '' %>">Peticiones</a>
+          </li>
           <% if (typeof canPublish !== 'undefined' && canPublish) { %>
           <li class="nav-item">
             <a href="/blog" class="nav-link <%= page === 'blog' ? 'active' : '' %>">Blog</a>
