@@ -1,0 +1,54 @@
+routes/signature.js
+  s_fce2362ad8a293::t_d317233c3842e8 27-33
+  s_fce2362ad8a293::t_b83cfc7393e246 48-50
+  s_fce2362ad8a293::t_1e3caaee7e2575 4-7,15,21-26,37-40,44-47
+  s_fce2362ad8a293::t_f079741548e7a3 35-36
+.env.example
+  s_fce2362ad8a293::t_1891a91b74e30c 47-49
+test/account.test.js
+  s_fce2362ad8a293::t_1fccbc64e0b301 426-427,431-433,436,441-447,449-452,459-460,462-463
+  s_fce2362ad8a293::t_d317233c3842e8 461,464-466,468-474,476-477
+  s_fce2362ad8a293::t_f079741548e7a3 453-458
+  s_fce2362ad8a293::t_2e6f75c459f3b8 467,475
+  s_fce2362ad8a293::t_cd3f6118078e90 434-435,437-440,448
+AGENTS.md
+  s_fce2362ad8a293::t_e824bc362ddc0c 28,42
+README.md
+  s_fce2362ad8a293::t_e824bc362ddc0c 11,520,960
+middleware/securityHeaders.js
+  s_fce2362ad8a293::t_b83cfc7393e246 6-7,15-16,18,29
+  s_fce2362ad8a293::t_1891a91b74e30c 35
+test/signature.test.js
+  s_fce2362ad8a293::t_1fccbc64e0b301 1-63
+config/appConfig.js
+  s_fce2362ad8a293::t_1891a91b74e30c 43-46
+public/js/firma.js
+  s_fce2362ad8a293::t_b83cfc7393e246 7
+  s_fce2362ad8a293::t_1e3caaee7e2575 1-6,8-42
+views/signature.ejs
+  s_fce2362ad8a293::t_b83cfc7393e246 46,50,61
+  s_fce2362ad8a293::t_d317233c3842e8 15-22
+  s_fce2362ad8a293::t_1e3caaee7e2575 1,3,6,10,13-14,23-34,36-39,41-42,45,47-49,51-60,62-66
+services/signature.js
+  s_fce2362ad8a293::t_d5ad4db1ef91cc 1-81
+config/signatureConcejalias.js
+  s_fce2362ad8a293::t_27404aca5533ce 1-2,6-7,73
+  s_fce2362ad8a293::t_cd3f6118078e90 3-5
+  s_fce2362ad8a293::t_7228fef292152b 8-72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "05e3a834db142ef644446cce72ae5ab37cbe1809",
+  "prompts": {},
+  "sessions": {
+    "s_fce2362ad8a293": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "abbfdd8e-3213-4c40-8035-e7366626bc8b",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Guillermo López <willyaranda@gmail.com>"
+    }
+  }
+}
