@@ -1,0 +1,21 @@
+views/admin-user-edit.ejs
+  s_fce2362ad8a293::t_1d6379a8477548 11
+test/adminUsers.test.js
+  s_fce2362ad8a293::t_1d6379a8477548 352-376
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3032b7fe68ab5cdb37a93a0825059e437d02b0ff",
+  "prompts": {},
+  "sessions": {
+    "s_fce2362ad8a293": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "abbfdd8e-3213-4c40-8035-e7366626bc8b",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Guillermo López <willyaranda@gmail.com>"
+    }
+  }
+}
