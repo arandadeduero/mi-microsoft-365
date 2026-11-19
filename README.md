@@ -8,7 +8,7 @@ Portal interno de autoservicio para los usuarios de Microsoft 365 del Ayuntamien
 - ✅ **Autenticación con Microsoft 365** - Flujo de código de autorización OAuth 2.0 con MSAL, para un solo inquilino (tenant)
 - ✅ **Perfil** - Perfil, foto, grupos, responsable y datos en bruto de Graph; cada usuario puede editar su puesto, teléfonos, oficina y foto. Los campos que Microsoft no deja cambiar a un usuario se muestran en solo lectura
 - ✅ **Directorio** - Directorio del personal con buscador, teléfonos y oficinas, exportable a Excel; cada persona tiene una tarjeta con código QR y vCard para guardarla en el móvil
-- ✅ **Mi firma de correo** - El generador de firmas del Ayuntamiento ([firmas-correo](https://github.com/arandadeduero/firmas-correo)) dentro del portal, con los datos del perfil al lado
+- ✅ **Mi firma de correo** - La firma se genera sola con los datos del perfil, en el formato del generador del Ayuntamiento ([firmas-correo](https://github.com/arandadeduero/firmas-correo)) y con el logo de la concejalía. Lo único que se elige es la concejalía, si el perfil no la dice; se copia con formato o como HTML
 - ✅ **Aplicaciones con acceso** - Qué aplicaciones tienen permisos sobre la cuenta del usuario y qué pueden hacer, en lenguaje llano
 - ✅ **Qué comparto fuera** - Archivos de OneDrive con enlaces para cualquiera o compartidos con direcciones externas, y un botón para dejar de compartirlos
 - ✅ **Mi equipo y solicitudes** - Las personas que dependen del usuario, y formularios a Informática para altas, bajas, equipos de Teams e invitados externos, con los datos que Informática necesita
@@ -517,7 +517,7 @@ No hay informe de cobertura: c8 no funciona en las versiones actuales de Node.js
 | `DATA_DIR` | Directorio de las solicitudes para entrar en grupos | `/var/lib/mi-microsoft-365` | No (por defecto: `./data`) |
 | `PASSWORD_MAX_AGE_DAYS` | Días que dura una contraseña en tu inquilino; hace que la página de la cuenta muestre los días que quedan | `90` | No (no se muestra caducidad) |
 | `PROFILE_EDITABLE_FIELDS` | Campos del perfil que los usuarios pueden cambiar por sí mismos, de entre `mobilePhone`, `businessPhones`, `jobTitle` y `officeLocation`; el resto se muestra en solo lectura | `mobilePhone,businessPhones` | No (por defecto: los cuatro) |
-| `SIGNATURE_GENERATOR_URL` | Dirección del generador de firmas, que se muestra dentro de la página «Mi firma» | `https://org.github.io/firmas-correo/` | No (por defecto: el del Ayuntamiento) |
+| `SIGNATURE_IMAGES_URL` | Dirección de la que se cargan los logos de la firma de correo, en la vista previa y en la que se copia (debe ser pública y acabar en `/`; el CSP permite imágenes solo de ese origen) | `https://org.github.io/firmas-correo/images/` | No (por defecto: la del Ayuntamiento) |
 | `INTRANET_URL` | Dirección de la intranet de la organización, enlazada desde la página de inicio, la de ayuda y el pie | `https://example.sharepoint.com` | No (por defecto: la del Ayuntamiento) |
 | `ORG_CHART_ROOT` | Dirección de la persona que está en lo alto del organigrama; las cuentas que no dependen de ella se listan debajo del gráfico | `top-person@example.com` | No (por defecto: la del Ayuntamiento; si nadie tiene esa dirección, quien tenga gente a su cargo y ningún responsable) |
 | `ADMIN_EMAIL` | Buzón que recibe las correcciones de responsable, las solicitudes de acceso a grupos, los inicios de sesión denunciados y los mensajes de la página de ayuda | `informatica@example.es` | Recomendada (si falta se usa una dirección incluida en el código) |
@@ -957,7 +957,7 @@ Notas:
 
 ### Cabeceras
 
-- ✅ `Content-Security-Policy` que solo permite recursos del propio servidor (más el generador de firmas del Ayuntamiento, embebido en «Mi firma»), ejecuta JavaScript únicamente desde los archivos de `public/js/` (nada inline) y prohíbe mostrar las páginas dentro de otras (`frame-ancestors 'none'`), `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin` y HSTS en producción (`middleware/securityHeaders.js`)
+- ✅ `Content-Security-Policy` que solo permite recursos del propio servidor (salvo los logos de la firma de correo, que se cargan de GitHub Pages para que la vista previa sea lo que ve quien la recibe), ejecuta JavaScript únicamente desde los archivos de `public/js/` (nada inline) y prohíbe mostrar las páginas dentro de otras (`frame-ancestors 'none'`), `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin` y HSTS en producción (`middleware/securityHeaders.js`)
 
 ### Recursos externos
 

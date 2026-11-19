@@ -657,15 +657,6 @@ h6,
   max-width: 1320px;
 }
 
-/* The signature generator, a page of its own shown inside /firma */
-.signature-generator {
-  width: 100%;
-  min-height: 1500px;
-  border: 1px solid var(--app-line);
-  border-radius: 0.75rem;
-  background: var(--color-white);
-}
-
 /* Teams presence in the directory */
 .presence-dot {
   display: inline-block;

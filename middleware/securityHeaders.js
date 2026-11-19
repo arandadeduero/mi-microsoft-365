@@ -3,7 +3,8 @@
  *
  * Set on every response. Everything the pages load is served by the app
  * itself (public/vendor), so the policy allows nothing from other servers
- * (except the organization's own signature generator, framed in /firma),
+ * (except the signature logos in /firma, loaded from the address the copied
+ * signature uses, so the preview is what a recipient gets),
  * and scripts only run from files under public/js: no inline <script> and no
  * onclick= attributes (test/routes.test.js checks the views). Inline styles
  * stay allowed because the org chart draws its cards with them.
@@ -11,10 +12,10 @@
 
 const appConfig = require('../config/appConfig');
 
-// The one page shown inside the portal: the organization's signature generator
-const generatorOrigin = (() => {
+// Where the logos of the signature come from (a public address of the organization)
+const logosOrigin = (() => {
   try {
-    return appConfig.SIGNATURE_GENERATOR_URL ? new URL(appConfig.SIGNATURE_GENERATOR_URL).origin : null;
+    return new URL(appConfig.SIGNATURE_IMAGES_URL).origin;
   } catch (error) {
     return null;
   }
@@ -25,13 +26,13 @@ const CONTENT_SECURITY_POLICY = [
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",
   // The profile photo is a data: URI, and so are Bootstrap's own icons
-  "img-src 'self' data:",
+  `img-src 'self' data:${logosOrigin ? ` ${logosOrigin}` : ''}`,
   "font-src 'self'",
   "connect-src 'self'",
   // Signing in is a redirect to Microsoft; listed in case a browser applies
   // form-action to the redirect that follows a form
   "form-action 'self' https://login.microsoftonline.com",
-  `frame-src ${generatorOrigin || "'none'"}`,
+  "frame-src 'none'",
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "object-src 'none'",

@@ -1,43 +1,69 @@
-<%- include('partials/header') %>
+<%- include('partials/header', { scripts: ['/js/firma.js'] }) %>
 
-<main class="container-xxl py-4 page-shell page-profile">
+<main class="container py-4 page-shell page-profile">
   <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
     <h1 class="h2 mb-0 page-title">Mi firma de correo</h1>
-    <div class="d-flex gap-2">
-      <% if (generatorUrl) { %><a href="<%= generatorUrl %>" target="_blank" rel="noopener" class="btn btn-outline-secondary">Abrir en una pestaña</a><% } %>
-      <a href="/account" class="btn btn-outline-secondary">Volver a mi cuenta</a>
-    </div>
+    <a href="/account" class="btn btn-outline-secondary">Volver a mi cuenta</a>
   </div>
 
   <p class="text-muted">
-    El generador del Ayuntamiento hace la firma con el formato oficial y el logo de tu concejalía. Se abre con los datos de tu perfil ya puestos (los tienes aquí al lado por si quieres cambiar algo); elige tu concejalía si no la ha acertado y pulsa <strong>Copiar vista previa</strong> para pegarla en Outlook.
-    <% if (missing.length > 0) { %>
-      En tu perfil falta <%= missing.map(field => field === 'jobTitle' ? 'el puesto' : 'el departamento').join(' y ') %>; puedes ponerlo en <a href="/profile/me/edit">Editar mi perfil</a>.
-    <% } %>
+    La firma se hace sola con los datos de tu perfil, con el formato oficial del Ayuntamiento y el logo de tu concejalía. No se escribe nada: si algo no es correcto, se cambia en tu perfil.
   </p>
 
-  <div class="row g-4">
-    <div class="col-lg-3">
-      <div class="card shadow-sm border-0 app-panel">
-        <div class="card-body p-4">
-          <h2 class="h6 text-muted text-uppercase mb-3">Tus datos</h2>
-          <dl class="mb-0">
-            <% details.forEach(function([label, value]) { %>
-              <dt class="small text-muted"><%= label %></dt>
-              <dd class="text-break"><%= value %></dd>
-            <% }); %>
-          </dl>
-        </div>
-      </div>
-    </div>
-    <div class="col-lg-9">
-      <% if (generatorUrl) { %>
-        <iframe src="<%= generatorUrl %>" title="Generador de firmas de correo del Ayuntamiento" class="signature-generator" allow="clipboard-write" loading="lazy"></iframe>
-      <% } else { %>
-        <div class="card shadow-sm border-0 app-panel"><div class="card-body p-4"><p class="text-muted mb-0">El generador de firmas no está configurado.</p></div></div>
+  <% if (missing.length > 0) { %>
+    <div class="alert alert-warning" role="alert">
+      <strong>Primero hay que completar tu perfil.</strong>
+      Te falta <%= missing.map(function(item) { return item.label; }).join(', ') %>, y sin eso no se puede hacer la firma.
+      <% if (missing.some(function(item) { return item.canEdit; })) { %>
+        <div class="mt-2"><a href="/profile/me/edit" class="btn btn-warning btn-sm">Editar mi perfil</a></div>
+      <% } %>
+      <% if (missing.some(function(item) { return !item.canEdit; })) { %>
+        <div class="small mt-2">Lo que no puedes cambiar tú mismo (<%= missing.filter(function(item) { return !item.canEdit; }).map(function(item) { return item.label; }).join(', ') %>) pídeselo a Informática.</div>
       <% } %>
     </div>
+  <% } %>
+
+  <div class="card shadow-sm border-0 app-panel mb-4">
+    <div class="card-body p-4">
+      <form action="/firma" method="GET" id="concejalia-form" class="row g-3 align-items-end">
+        <div class="col-md-8">
+          <label for="concejalia" class="form-label">Concejalía</label>
+          <select id="concejalia" name="concejalia" class="form-select">
+            <% if (!key) { %><option value="" selected disabled>Elige tu concejalía</option><% } %>
+            <% Object.keys(concejalias).forEach(function(k) { %>
+              <option value="<%= k %>" <%= k === key ? 'selected' : '' %>><%= concejalias[k] %></option>
+            <% }); %>
+          </select>
+          <% if (!key && department) { %>
+            <div class="form-text">Tu departamento en el perfil es «<%= department %>» y no coincide con ninguna concejalía; elige la tuya.</div>
+          <% } %>
+        </div>
+        <div class="col-md-4"><button type="submit" class="btn btn-outline-primary w-100">Ver firma</button></div>
+      </form>
+    </div>
   </div>
+
+  <% if (signatureHtml) { %>
+    <div class="card shadow-sm border-0 app-panel">
+      <div class="card-body p-4">
+        <h2 class="h5 mb-3">Vista previa</h2>
+        <div id="signature-preview" class="signature-preview border rounded p-3 mb-3 bg-white text-dark"><%- signatureHtml %></div>
+
+        <div class="d-flex flex-wrap gap-2 mb-3">
+          <button type="button" class="btn btn-primary" data-copy="rich">Copiar la firma (con formato)</button>
+          <button type="button" class="btn btn-outline-secondary" data-copy="html">Copiar el código HTML</button>
+        </div>
+        <p class="text-muted small mb-3">
+          <strong>Outlook:</strong> Archivo → Opciones → Correo → Firmas → Nueva → pegar la firma.
+          <strong>Gmail:</strong> Ajustes → General → Firma → pegar.
+          <strong>Thunderbird:</strong> Configuración de la cuenta → Texto de la firma → marcar «Usar HTML» → pegar el código HTML.
+        </p>
+        <textarea id="signature-html" class="visually-hidden" readonly tabindex="-1" aria-hidden="true"><%= signatureHtml %></textarea>
+      </div>
+    </div>
+  <% } else if (missing.length === 0) { %>
+    <div class="card shadow-sm border-0 app-panel"><div class="card-body p-4"><p class="text-muted mb-0">Elige tu concejalía para ver la firma.</p></div></div>
+  <% } %>
 </main>
 
 <%- include('partials/footer') %>

@@ -40,9 +40,10 @@ module.exports = {
   // directory, the top is whoever has people below and no manager.
   ORG_CHART_ROOT: process.env.ORG_CHART_ROOT || 'alinaje@arandadeduero.es',
 
-  // The organization's own signature generator (github.com/arandadeduero/firmas-correo),
-  // shown inside the /firma page. Empty hides the page's embed.
-  SIGNATURE_GENERATOR_URL: process.env.SIGNATURE_GENERATOR_URL || 'https://arandadeduero.github.io/firmas-correo/',
+  // Where the logos of a copied email signature are loaded from (the
+  // organization's github.com/arandadeduero/firmas-correo on GitHub Pages).
+  // Recipients cannot reach this portal, so the signature needs a public address.
+  SIGNATURE_IMAGES_URL: process.env.SIGNATURE_IMAGES_URL || 'https://arandadeduero.github.io/firmas-correo/images/',
 
   // Recipient of the requests that have nobody else to go to
   ADMIN_EMAIL: process.env.ADMIN_EMAIL || 'glopez@arandadeduero.es',
