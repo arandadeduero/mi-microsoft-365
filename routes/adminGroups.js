@@ -2,6 +2,7 @@
  * Admin Groups Routes (/admin/grupos/*)
  *
  * - /admin/grupos        - List of every group, filter by name and kind
+ * - /admin/grupos/atencion - Groups with no owner, one owner or nobody inside
  * - /admin/grupos/:id/miembros/lote - Several people at once, with a preview
  * - /admin/grupos-distribucion - The Exchange mailing lists (read-only: Graph cannot change them)
  * - /admin/grupos/nuevo  - Create a Microsoft 365 group or a security group
@@ -19,6 +20,7 @@ const { compareEs, DIRECTORY_ID } = require('../services/formatters');
 const { mapWithConcurrency } = require('../services/asyncUtils');
 const {
   listAdminGroups,
+  getGroupsChecks,
   getAdminGroup,
   createGroup,
   updateGroup,
@@ -37,6 +39,7 @@ const {
   VISIBILITIES,
   describeAdminGroup,
   filterAdminGroups,
+  reviewGroups,
   validateNewGroup,
   validateGroupEdit,
   diffGroupEdit,
@@ -96,6 +99,19 @@ router.get('/admin/grupos', isAuthenticated, requireAdmin, async (req, res, next
       flash: popSessionValue(req, 'adminGroupsFlash'),
       errorMsg: popSessionValue(req, 'adminGroupsError'),
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Groups that need a look: no owner, one owner, nobody inside. Only groups the
+// portal can manage (the owners of the others are not ours to fix).
+router.get('/admin/grupos/atencion', isAuthenticated, requireAdmin, async (req, res, next) => {
+  try {
+    const token = req.session.accessToken;
+    const groups = (await listAdminGroups(token)).map(describeAdminGroup).filter(group => group.manageable);
+    const review = reviewGroups(groups, await getGroupsChecks(token, groups.map(group => group.id)));
+    res.render('admin-groups-review', { title: 'Grupos que necesitan atención', currentPage: 'admin', review, total: groups.length });
   } catch (error) {
     next(error);
   }
