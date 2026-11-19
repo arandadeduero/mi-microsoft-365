@@ -1,0 +1,40 @@
+server.js
+  s_fce2362ad8a293::t_bef6080be7f678 30,216-217
+views/admin-users-excel.ejs
+  s_fce2362ad8a293::t_0d9af526592e50 19-20
+config/auditEvents.js
+  s_fce2362ad8a293::t_bef6080be7f678 42-43
+test/excelDrift.test.js
+  s_fce2362ad8a293::t_8e118d963c415f 1-149
+views/admin-users.ejs
+  s_fce2362ad8a293::t_0d9af526592e50 20-21
+.env.example
+  s_fce2362ad8a293::t_b8721fa02d286b 56-58
+views/partials/excel-drift.ejs
+  s_fce2362ad8a293::t_bef6080be7f678 1-26
+AGENTS.md
+  s_fce2362ad8a293::t_b8721fa02d286b 47,111
+README.md
+  s_fce2362ad8a293::t_b8721fa02d286b 520
+services/excelDrift.js
+  s_fce2362ad8a293::t_bef6080be7f678 1-93,95-96,98-118
+  s_fce2362ad8a293::t_1d2c35755b16e8 94,97
+routes/adminUsers.js
+  s_fce2362ad8a293::t_0d9af526592e50 27-28,250,296-301,309
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "22be888848c6506301373df9fb230ab4bcc84e93",
+  "prompts": {},
+  "sessions": {
+    "s_fce2362ad8a293": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "abbfdd8e-3213-4c40-8035-e7366626bc8b",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Guillermo López <willyaranda@gmail.com>"
+    }
+  }
+}
