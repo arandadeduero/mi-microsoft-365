@@ -6,7 +6,7 @@
 module.exports = {
   soporte: {
     title: 'Soporte informático',
-    event: 'request.support_test',
+    event: 'request.support',
     intro: 'Cuéntanos qué te pasa con el ordenador, el correo, una impresora o cualquier programa. Con estos datos Informática no tiene que volver a preguntarte lo básico.',
     fields: [
       { name: 'category', label: 'Qué tipo de problema es', type: 'select', required: true, options: [

@@ -1,6 +1,6 @@
 /**
  * Internal Requests Tests (/peticiones)
- * The support form (a trial: checked and shown back, sent nowhere) and the link to a Microsoft Form
+ * The support form (sent to IT by email from the person's own mailbox) and the link to a Microsoft Form
  */
 
 require('./helpers/env');
@@ -32,14 +32,15 @@ test.after.always(() => agent.get('/auth/logout'));
 test.beforeEach(() => {
   http.reset();
   appConfig.INTERNAL_REQUESTS_FORM_URL = '';
+  http.on('post', '/me/sendMail', {});
   http.on('get', '/v1.0/me', { displayName: 'Alice Example', mail: 'alice@arandadeduero.es', department: 'Urbanismo', officeLocation: 'Casa Consistorial, despacho 2', businessPhones: ['947500100'] });
 });
 
-test.serial('GET /peticiones shows the support form with the profile filled in, and says it is a trial', async t => {
+test.serial('GET /peticiones shows the support form with the profile filled in', async t => {
   const res = await agent.get('/peticiones').expect(200);
 
   t.regex(res.text, /Soporte informático/);
-  t.regex(res.text, /todavía no se envía a nadie/);
+  t.notRegex(res.text, /Prueba\./);
   // The person is not typed: it comes from the profile
   t.regex(res.text, /Alice Example<\/strong> \(alice@arandadeduero\.es, Urbanismo\)/);
   t.regex(res.text, /name="location" value="Casa Consistorial, despacho 2"/);
@@ -69,34 +70,55 @@ test.serial('the page still opens, with an empty form, when the profile cannot b
   t.regex(res.text, /name="location" value=""/);
 });
 
-test.serial('a valid support form is shown back, sent nowhere, and only its kind is audited', async t => {
-  const res = await post(VALID).expect(200);
+test.serial('a valid support form goes to IT from my mailbox, and only its kind is audited', async t => {
+  const res = await post(VALID).expect(302);
+  t.is(res.header.location, '/peticiones?sent=soporte');
 
-  t.regex(res.text, /todavía no se ha enviado a nadie/);
-  t.regex(res.text, /La impresora no imprime/);
-  t.regex(res.text, /Sale «error 5» al imprimir desde ayer/);
-  t.regex(res.text, /De: <strong>[^<]*alice@arandadeduero\.es/);
-  // Nothing leaves: no mail, no write of any kind to Graph
-  t.is(http.calls.filter(c => c.method !== 'get').length, 0);
-  const event = auditEvents('request.support_test').at(-1);
+  const [call] = http.callsTo('post', '/me/sendMail');
+  t.is(http.callsTo('post', '/me/sendMail').length, 1);
+  const { message } = call.data;
+  t.is(message.toRecipients[0].emailAddress.address, 'admin@example.test');
+  t.is(message.subject, '[Mi Microsoft 365] Soporte informático: La impresora no imprime');
+  t.is(message.body.contentType, 'Text');
+  for (const line of [
+    'pide desde el portal: Soporte informático.', 'Departamento: Urbanismo',
+    'Qué tipo de problema es: Impresora o escáner', 'Cuánto te afecta: No puedo trabajar',
+    'Qué ocurre: Sale «error 5» al imprimir desde ayer', 'Equipo afectado: PC-0123', 'Teléfono para contactarte: 947500100',
+  ]) t.true(message.body.content.includes(line), line);
+
+  const event = auditEvents('request.support').at(-1);
   t.is(event.kind, 'soporte');
   t.false(JSON.stringify(event).includes('impresora'));
+
+  t.regex((await agent.get('/peticiones?sent=soporte').expect(200)).text, /Petición enviada\. Informática la recibe en admin@example\.test/);
+  t.notRegex((await agent.get('/peticiones').expect(200)).text, /Petición enviada/);
 });
 
-test.serial('what is typed is escaped, and empty optional fields are not listed', async t => {
-  const res = await post({ ...VALID, description: '<script>alert(1)</script>', device: '', phone: '' }).expect(200);
-  t.notRegex(res.text, /<script>alert\(1\)<\/script>/);
-  t.regex(res.text, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
-  t.notRegex(res.text, /Equipo afectado/);
+test.serial('optional fields left empty are not in the email, and a subject is always one line', async t => {
+  await post({ ...VALID, device: '', phone: '', subject: '  Falla\r\nBcc: otra@x.es   mucho  ' }).expect(302);
+  const { message } = http.callsTo('post', '/me/sendMail').at(-1).data;
+  t.is(message.subject, '[Mi Microsoft 365] Soporte informático: Falla Bcc: otra@x.es mucho');
+  t.notRegex(message.subject, /[\r\n]/);
+  t.false(message.body.content.includes('Equipo afectado'));
+  t.false(message.body.content.includes('Teléfono para contactarte'));
+});
+
+test.serial('if the email cannot be sent, the person is told and nothing is audited', async t => {
+  http.fail('post', '/me/sendMail', 500);
+  const events = auditEvents('request.support').length;
+  const res = await post(VALID).expect(502);
+  t.regex(res.text, /No se ha podido enviar la petición\. Escribe directamente a admin@example\.test/);
+  t.is(auditEvents('request.support').length, events);
 });
 
 test.serial('a form with a required field missing, a bad option or too much text is refused', async t => {
-  const events = auditEvents('request.support_test').length;
+  const events = auditEvents('request.support').length;
   t.regex((await post({ ...VALID, subject: '  ' }).expect(400)).text, /Falta «Asunto»/);
   t.regex((await post({ ...VALID, category: 'Inventada' }).expect(400)).text, /no es una opción válida/);
   t.regex((await post({ ...VALID, impact: '' }).expect(400)).text, /Falta «Cuánto te afecta»/);
   t.regex((await post({ ...VALID, description: 'x'.repeat(2001) }).expect(400)).text, /demasiado largo/);
-  t.is(auditEvents('request.support_test').length, events);
+  t.is(auditEvents('request.support').length, events);
+  t.is(http.callsTo('post', '/me/sendMail').length, 0);
 });
 
 test.serial('without a session, /peticiones sends to the login, and posting needs the CSRF token', async t => {
