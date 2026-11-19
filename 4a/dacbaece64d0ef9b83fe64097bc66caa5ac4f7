@@ -1,0 +1,31 @@
+test/adminGroups.test.js
+  s_fce2362ad8a293::t_ec8ec3222c1293 98,124-142
+  s_fce2362ad8a293::t_bc421ea3027f6e 143-144
+README.md
+  s_fce2362ad8a293::t_ec8ec3222c1293 39
+views/admin-distribution.ejs
+  s_fce2362ad8a293::t_ec8ec3222c1293 1-53
+views/partials/header.ejs
+  s_fce2362ad8a293::t_ec8ec3222c1293 120
+AGENTS.md
+  s_fce2362ad8a293::t_ec8ec3222c1293 45
+routes/adminGroups.js
+  s_fce2362ad8a293::t_ec8ec3222c1293 5,99-107
+  s_fce2362ad8a293::t_027726adb1cc39 108-112
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4adacbaece64d0ef9b83fe64097bc66caa5ac4f7",
+  "prompts": {},
+  "sessions": {
+    "s_fce2362ad8a293": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "abbfdd8e-3213-4c40-8035-e7366626bc8b",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Guillermo López <willyaranda@gmail.com>"
+    }
+  }
+}
