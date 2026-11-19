@@ -86,13 +86,13 @@ test('license stock says what is running out, named from the catalog', t => {
 
 test.serial('the admin pages are for administrators only', async t => {
   const user = await signInAs(t, USER, { admin: false });
-  for (const path of ['/admin/cuentas', '/admin/licencias', '/admin/avisos', '/admin/solicitudes', '/admin/salas', '/admin/comisiones', '/admin/ajustes', '/admin/audit.csv']) {
+  for (const path of ['/admin/usuarios/atencion', '/admin/licencias', '/admin/avisos', '/admin/solicitudes', '/admin/salas', '/admin/comisiones', '/admin/ajustes', '/admin/auditoria.csv']) {
     await user.get(path).expect(403);
   }
   t.pass();
 });
 
-test.serial('GET /admin/licencias and /admin/cuentas read Graph and show the lists', async t => {
+test.serial('GET /admin/licencias and /admin/usuarios/atencion read Graph and show the lists', async t => {
   const admin = await signInAs(t, ADMIN, { admin: true });
   http.on('get', '/v1.0/subscribedSkus', { value: [{ skuPartNumber: 'O365_BUSINESS_PREMIUM', prepaidUnits: { enabled: 50 }, consumedUnits: 49 }] });
   http.on('get', '/v1.0/users', ({ config }) => (config.params.$select.includes('signInActivity')
@@ -104,7 +104,7 @@ test.serial('GET /admin/licencias and /admin/cuentas read Graph and show the lis
   t.true(licenses.text.includes('Microsoft 365 Empresa Estándar'));
   t.true(licenses.text.includes('Se agotan'));
 
-  const accounts = await admin.get('/admin/cuentas').expect(200);
+  const accounts = await admin.get('/admin/usuarios/atencion').expect(200);
   t.true(accounts.text.includes('Ana Idle'));
   t.true(accounts.text.includes('hace 300 días'));
   t.true(accounts.text.includes('informe de métodos de autenticación necesita'));
@@ -113,7 +113,7 @@ test.serial('GET /admin/licencias and /admin/cuentas read Graph and show the lis
   t.is(http.callsTo('get', '/v1.0/users')[0].config.params.$top, 500);
 });
 
-test.serial('GET /admin/cuentas says why the last sign-in cannot be known, in Graph\'s own words', async t => {
+test.serial('GET /admin/usuarios/atencion says why the last sign-in cannot be known, in Graph\'s own words', async t => {
   const admin = await signInAs(t, ADMIN, { admin: true });
   http.on('get', '/v1.0/users', ({ config }) => {
     if (config.params.$select.includes('signInActivity')) {
@@ -125,7 +125,7 @@ test.serial('GET /admin/cuentas says why the last sign-in cannot be known, in Gr
   });
   http.fail('get', '/userRegistrationDetails', 403);
 
-  const res = await admin.get('/admin/cuentas').expect(200);
+  const res = await admin.get('/admin/usuarios/atencion').expect(200);
 
   t.true(res.text.includes('sin licencias Entra ID P1 o P2'));
   t.true(res.text.includes('Graph responde Authentication_RequestFromNonPremiumTenantOrB2CTenant'));
@@ -336,11 +336,22 @@ test.serial('settings saved from the web take effect at once and are audited', a
   t.true(page.text.includes('>alice\nbob</textarea>'));
 });
 
-test.serial('GET /admin/audit.csv exports the filtered log', async t => {
+test.serial('the old addresses of the audit log and the accounts page redirect, keeping the filters', async t => {
+  // Nobody needs to be signed in to be sent on: the new address checks who asks
+  const audit = await request(app).get('/admin/audit?event=blog.post&actor=bob').expect(301);
+  t.is(audit.header.location, '/admin/auditoria?event=blog.post&actor=bob');
+  t.is((await request(app).get('/admin/audit')).header.location, '/admin/auditoria');
+  const csv = await request(app).get('/admin/audit.csv?day=2026-10-08').expect(301);
+  t.is(csv.header.location, '/admin/auditoria.csv?day=2026-10-08');
+  const accounts = await request(app).get('/admin/cuentas').expect(301);
+  t.is(accounts.header.location, '/admin/usuarios/atencion');
+});
+
+test.serial('GET /admin/auditoria.csv exports the filtered log', async t => {
   const admin = await signInAs(t, ADMIN, { admin: true });
   fs.appendFileSync(path.join(process.env.AUDIT_DIR, `${day(0).slice(0, 10)}.log`), JSON.stringify({ time: day(0), event: 'blog.post', actor: 'carol@arandadeduero.es', ip: '203.0.113.9', title: 'Corte' }) + '\n');
 
-  const res = await admin.get('/admin/audit.csv?event=blog.post').expect(200).expect('Content-Type', /text\/csv/);
+  const res = await admin.get('/admin/auditoria.csv?event=blog.post').expect(200).expect('Content-Type', /text\/csv/);
   t.true(res.text.startsWith('﻿"Fecha";"Evento";"Usuario";"IP";"Detalles"'));
   t.true(res.text.includes('"blog.post";"carol@arandadeduero.es";"203.0.113.9";"{""title"":""Corte""}"'));
   t.false(res.text.includes('auth.sign_in'));

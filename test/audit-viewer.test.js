@@ -53,7 +53,7 @@ test.serial('only administrators get the administration menu', async t => {
   const admin = await signInAs(t, ADMIN, { admin: true });
   const adminMenu = (await admin.get('/ayuda').expect(200)).text.split('<nav ')[1].split('</nav>')[0];
   t.true(adminMenu.includes('>Administración</a>'));
-  t.true(adminMenu.includes('href="/admin/audit"'));
+  t.true(adminMenu.includes('href="/admin/auditoria"'));
   // The menu is split in sections, and Grupos sits with the people
   for (const title of ['Personas y cuentas', 'Día a día', 'Supervisión', 'Portal']) {
     t.true(adminMenu.includes(`<h6 class="dropdown-header">${title}</h6>`), title);
@@ -64,13 +64,13 @@ test.serial('only administrators get the administration menu', async t => {
   const user = await signInAs(t, USER, { admin: false });
   const userMenu = (await user.get('/ayuda').expect(200)).text.split('<nav ')[1].split('</nav>')[0];
   t.false(userMenu.includes('Administración'));
-  t.false(userMenu.includes('/admin/audit'));
+  t.false(userMenu.includes('/admin/auditoria'));
 });
 
 test.serial('an administrator sees the log, newest first, with its details', async t => {
   const admin = await signInAs(t, ADMIN, { admin: true });
 
-  const res = await admin.get('/admin/audit').expect(200);
+  const res = await admin.get('/admin/auditoria').expect(200);
 
   const position = (text) => res.text.indexOf(text);
   t.true(position('reset.password_changed') > -1);
@@ -86,15 +86,15 @@ test.serial('an administrator sees the log, newest first, with its details', asy
 test.serial('only administrators get the page or the link to it', async t => {
   const user = await signInAs(t, USER, { admin: false });
 
-  const res = await user.get('/admin/audit').expect(403);
+  const res = await user.get('/admin/auditoria').expect(403);
   const home = await user.get('/').expect(200);
 
   t.true(res.text.includes('solo para administradores'));
   t.false(res.text.includes('Corte de agua'));
-  t.false(home.text.includes('href="/admin/audit"'));
-  t.like(auditEvents('permission.denied').at(-1), { actor: USER.username, path: '/admin/audit' });
+  t.false(home.text.includes('href="/admin/auditoria"'));
+  t.like(auditEvents('permission.denied').at(-1), { actor: USER.username, path: '/admin/auditoria' });
 
-  const anonymous = await request(app).get('/admin/audit').expect(302);
+  const anonymous = await request(app).get('/admin/auditoria').expect(302);
   t.is(anonymous.header.location, '/login');
 });
 
@@ -103,26 +103,26 @@ test.serial('administrators have the link in the menu', async t => {
 
   const home = await admin.get('/').expect(200);
 
-  t.true(home.text.includes('href="/admin/audit"'));
+  t.true(home.text.includes('href="/admin/auditoria"'));
 });
 
 test.serial('the log can be filtered by event, by person and by day', async t => {
   const admin = await signInAs(t, ADMIN, { admin: true });
 
-  const byEvent = await admin.get('/admin/audit?event=blog.post').expect(200);
+  const byEvent = await admin.get('/admin/auditoria?event=blog.post').expect(200);
   t.true(byEvent.text.includes('Corte de agua'));
   t.false(byEvent.text.includes('203.0.113.8'));
 
-  const byActor = await admin.get('/admin/audit?actor=BOB').expect(200);
+  const byActor = await admin.get('/admin/auditoria?actor=BOB').expect(200);
   t.true(byActor.text.includes('203.0.113.8'));
   t.false(byActor.text.includes('Corte de agua'));
 
-  const byDay = await admin.get('/admin/audit?day=2026-10-08').expect(200);
+  const byDay = await admin.get('/admin/auditoria?day=2026-10-08').expect(200);
   t.true(byDay.text.includes('203.0.113.8'));
   t.false(byDay.text.includes('Corte de agua'));
   t.true(byDay.text.includes('1 evento.'));
 
-  const nothing = await admin.get('/admin/audit?day=2026-10-08&event=blog.post').expect(200);
+  const nothing = await admin.get('/admin/auditoria?day=2026-10-08&event=blog.post').expect(200);
   t.true(nothing.text.includes('No hay eventos que coincidan'));
 });
 
@@ -131,7 +131,7 @@ test.serial('a day that is not a date reads nothing', async t => {
   fs.writeFileSync(path.join(process.env.AUDIT_DIR, 'secret.txt'), line({ time: '2026-10-09T00:00:00Z', event: 'leak', actor: 'x' }));
 
   for (const day of ['../secret', 'secret.txt', '2026-10-09/../secret', '']) {
-    const res = await admin.get('/admin/audit').query({ day }).expect(200);
+    const res = await admin.get('/admin/auditoria').query({ day }).expect(200);
     t.false(res.text.includes('<code>leak</code>'), day);
   }
 });
@@ -143,8 +143,8 @@ test.serial('without a day the last seven days with entries are shown', async t 
   }
   const admin = await signInAs(t, ADMIN, { admin: true });
 
-  const res = await admin.get('/admin/audit?event=test.day').expect(200);
-  const older = await admin.get('/admin/audit?event=blog.post').expect(200);
+  const res = await admin.get('/admin/auditoria?event=test.day').expect(200);
+  const older = await admin.get('/admin/auditoria?event=blog.post').expect(200);
 
   t.true(res.text.includes('day8@example.test'));
   t.true(res.text.includes('day2@example.test'));
@@ -156,7 +156,7 @@ test.serial('a line cut short does not hide the rest of the day', async t => {
   fs.appendFileSync(path.join(process.env.AUDIT_DIR, '2026-10-09.log'), '{"time":"2026-10-09T11:00:00.000Z","event":"trunc');
   const admin = await signInAs(t, ADMIN, { admin: true });
 
-  const res = await admin.get('/admin/audit?day=2026-10-09').expect(200);
+  const res = await admin.get('/admin/auditoria?day=2026-10-09').expect(200);
 
   t.true(res.text.includes('Corte de agua'));
   t.true(res.text.includes('2 eventos.'));
@@ -171,7 +171,7 @@ test.serial('a very busy period shows the most recent entries and says how many 
   writeDay('2026-10-09', entries);
   const admin = await signInAs(t, ADMIN, { admin: true });
 
-  const res = await admin.get('/admin/audit?event=test.busy').expect(200);
+  const res = await admin.get('/admin/auditoria?event=test.busy').expect(200);
 
   t.true(res.text.includes('Se muestran los 500 más recientes de 520'));
   t.true(res.text.includes('user519@example.test'));
