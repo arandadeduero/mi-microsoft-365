@@ -36,7 +36,7 @@ Portal interno de autoservicio para los usuarios de Microsoft 365 del Ayuntamien
 - ✅ **Protección CSRF** - Cada formulario y cada petición desde el navegador lleva un token propio de la sesión
 - ✅ **Renovación silenciosa de tokens** - Los tokens de acceso se renuevan en segundo plano, así que los usuarios siguen con la sesión iniciada todo el tiempo que dura
 - ✅ **Aviso de administrador** - Quien tiene un rol de directorio de Entra ve un aviso ADMIN y sus roles
-- ✅ **Administración → Grupos** - Listado de todos los grupos (Microsoft 365, de seguridad, listas de Exchange y dinámicos), ficha con sus datos, propietarios y miembros, y creación y edición de grupos de Microsoft 365 y de seguridad. Los grupos dinámicos, los de Exchange y los sincronizados desde un directorio local se muestran solo en lectura
+- ✅ **Administración → Grupos** - Listado de todos los grupos (Microsoft 365, de seguridad, listas de Exchange y dinámicos), ficha con sus datos, propietarios y miembros, y creación y edición de grupos de Microsoft 365 y de seguridad. Los grupos dinámicos, los de Exchange y los sincronizados desde un directorio local se muestran solo en lectura. «Listas de distribución» (`/admin/grupos-distribucion`) reúne las listas de correo de Exchange, con quién hay dentro, y explica qué son; Microsoft solo deja crearlas y cambiar sus miembros desde Exchange
 - ✅ **Permisos por ruta** - `/blog` está restringido a una lista de usuarios que se guarda en `config/local.js`
 - ✅ **Sesiones persistentes** - Las sesiones se guardan en archivos, para mantener el inicio de sesión aunque se reinicie el servidor
 - ✅ **Páginas de error** - Página de error amable; el mensaje real solo se muestra fuera de producción

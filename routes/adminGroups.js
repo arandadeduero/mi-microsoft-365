@@ -2,6 +2,7 @@
  * Admin Groups Routes (/admin/grupos/*)
  *
  * - /admin/grupos        - List of every group, filter by name and kind
+ * - /admin/grupos-distribucion - The Exchange mailing lists (read-only: Graph cannot change them)
  * - /admin/grupos/nuevo  - Create a Microsoft 365 group or a security group
  * - /admin/grupos/:id    - Properties, owners and members; edit what Graph lets us
  *
@@ -90,6 +91,20 @@ router.get('/admin/grupos', isAuthenticated, requireAdmin, async (req, res, next
       flash: popSessionValue(req, 'adminGroupsFlash'),
       errorMsg: popSessionValue(req, 'adminGroupsError'),
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// The classic mailing lists live in Exchange: Graph can read them but not create them or change their members
+const EXCHANGE_KINDS = ['Lista de distribución (Exchange)', 'Seguridad con correo (Exchange)'];
+
+router.get('/admin/grupos-distribucion', isAuthenticated, requireAdmin, async (req, res, next) => {
+  try {
+    const lists = (await listAdminGroups(req.session.accessToken))
+      .map(describeAdminGroup)
+      .filter(group => EXCHANGE_KINDS.includes(group.kind));
+    res.render('admin-distribution', { title: 'Listas de distribución', currentPage: 'admin', lists });
   } catch (error) {
     next(error);
   }
