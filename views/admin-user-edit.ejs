@@ -8,7 +8,7 @@
   const managers = Array.isArray(managersList) ? managersList.filter(function(m) { return m.id !== u.id; }) : [];
   const hireDate = (u.employeeHireDate || '').slice(0, 10);
   const businessPhone = (Array.isArray(u.businessPhones) && u.businessPhones[0]) ? u.businessPhones[0] : '';
-  const employeeTypes = ['Employee', 'Contractor', 'Consultant', 'Vendor'];
+  const employeeTypes = ['Funcionario', 'Laboral', 'Programa de empleo', 'Concejal', 'Eventual'];
   const currentEmpType = u.employeeType || '';
   const hasCustomEmpType = currentEmpType && !employeeTypes.includes(currentEmpType);
   const enabledStr = u.accountEnabled === false ? 'false' : 'true';
