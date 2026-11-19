@@ -1,0 +1,204 @@
+<%- include('partials/header', { scripts: ['/js/admin-users.js'] }) %>
+
+<%
+  const list = Array.isArray(users) ? users : [];
+  const f = filters || {};
+  const statusVal = f.status === 'disabled' ? 'disabled' : 'active';
+  const totalCount = typeof totalUsers === 'number' ? totalUsers : list.length;
+  const mailCount = typeof mailingCount === 'number' ? mailingCount : 0;
+  const mailText = typeof mailingList === 'string' ? mailingList : '';
+%>
+
+<main class="container py-4 page-shell page-error">
+  <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+    <h1 class="h2 mb-0 page-title">Gestión de usuarios</h1>
+    <span class="text-muted small">Mostrando <strong><%= list.length %></strong> de <%= totalCount %> cuentas</span>
+  </div>
+
+  <%- include('partials/admin-users-nav', { activeTab: 'directorio' }) %>
+
+  <% if (typeof flash !== 'undefined' && flash) { %>
+    <div class="alert alert-success" role="status"><%= flash %></div>
+  <% } %>
+  <% if (typeof errorMsg !== 'undefined' && errorMsg) { %>
+    <div class="alert alert-danger" role="alert"><%= errorMsg %></div>
+  <% } %>
+  <% if (!signInsKnown && f.neverSignedIn) { %>
+    <div class="alert alert-warning" role="status">
+      No se ha podido consultar la fecha de último acceso (requiere Entra ID P1/P2 y el permiso de aplicación <code>AuditLog.Read.All</code>), por lo que el filtro «Nunca inició sesión» no puede aplicarse.
+    </div>
+  <% } %>
+
+  <div class="card shadow-sm border-0 app-panel mb-4">
+    <div class="card-body p-4">
+      <form action="/admin/usuarios" method="GET" class="row g-3 align-items-end">
+        <div class="col-md-5">
+          <label for="q" class="form-label">Buscar</label>
+          <input
+            type="search"
+            class="form-control"
+            id="q"
+            name="q"
+            value="<%= f.q || '' %>"
+            placeholder="Nombre, usuario, puesto, departamento o ID..."
+          >
+        </div>
+        <div class="col-md-3">
+          <label for="status" class="form-label">Estado</label>
+          <select class="form-select" id="status" name="status">
+            <option value="active" <%= statusVal === 'active' ? 'selected' : '' %>>Activos</option>
+            <option value="disabled" <%= statusVal === 'disabled' ? 'selected' : '' %>>Deshabilitados</option>
+          </select>
+        </div>
+        <div class="col-md-4 d-flex gap-2">
+          <button type="submit" class="btn btn-primary">Filtrar</button>
+          <a href="/admin/usuarios" class="btn btn-outline-secondary">Quitar filtros</a>
+        </div>
+        <div class="col-12">
+          <div class="d-flex flex-wrap gap-3 pt-1">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="missingManager" name="missingManager" value="1" <%= f.missingManager ? 'checked' : '' %>>
+              <label class="form-check-label" for="missingManager">Sin responsable</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="missingDepartment" name="missingDepartment" value="1" <%= f.missingDepartment ? 'checked' : '' %>>
+              <label class="form-check-label" for="missingDepartment">Sin departamento</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="missingJobTitle" name="missingJobTitle" value="1" <%= f.missingJobTitle ? 'checked' : '' %>>
+              <label class="form-check-label" for="missingJobTitle">Sin puesto</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="neverSignedIn" name="neverSignedIn" value="1" <%= f.neverSignedIn ? 'checked' : '' %>>
+              <label class="form-check-label" for="neverSignedIn">Nunca inició sesión</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="emptyGroups" name="emptyGroups" value="1" <%= f.emptyGroups ? 'checked' : '' %>>
+              <label class="form-check-label" for="emptyGroups">Sin grupos propios</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="includeRooms" name="includeRooms" value="1" <%= f.includeRooms ? 'checked' : '' %>>
+              <label class="form-check-label" for="includeRooms">Incluir salas</label>
+            </div>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="card shadow-sm border-0 app-panel mb-4">
+    <div class="card-body p-4">
+      <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-2">
+        <div>
+          <h2 class="h6 mb-0">
+            Lista de correo (usuarios con licencia)
+            <span class="badge bg-secondary ms-1"><%= mailCount %></span>
+          </h2>
+          <p class="text-muted small mb-0">Direcciones separadas por punto y coma para pegar directamente en Outlook.</p>
+        </div>
+        <div class="d-flex gap-2 flex-shrink-0">
+          <button type="button" class="btn btn-outline-primary btn-sm" data-copy-target="#mailingListText">Copiar lista</button>
+          <button
+            type="button"
+            class="btn btn-outline-secondary btn-sm"
+            data-bs-toggle="collapse"
+            data-bs-target="#mailingListCollapse"
+            aria-expanded="false"
+            aria-controls="mailingListCollapse"
+          >Ver lista</button>
+        </div>
+      </div>
+      <div class="collapse mt-3" id="mailingListCollapse">
+        <label for="mailingListText" class="visually-hidden">Lista de correo de usuarios con licencia</label>
+        <textarea id="mailingListText" class="form-control font-monospace small" rows="2" readonly><%= mailText %></textarea>
+      </div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm border-0 app-panel">
+    <div class="card-body p-4">
+      <% if (list.length === 0) { %>
+        <p class="text-muted mb-0">No se han encontrado usuarios con los filtros seleccionados.</p>
+      <% } else { %>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover align-middle mb-0">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Nombre</th>
+                <th>Usuario</th>
+                <th>Puesto</th>
+                <th>Departamento</th>
+                <th>Responsable</th>
+                <th>Grupos</th>
+                <th>Licencias</th>
+                <th>Último acceso</th>
+                <th class="text-end">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% list.forEach(function(u) { %>
+                <%
+                  const mgrName = typeof u.manager === 'string'
+                    ? u.manager
+                    : (u.manager && u.manager.displayName) || u.managerName || '';
+                  const userGroups = Array.isArray(u.groups) ? u.groups : [];
+                  const userLicenses = Array.isArray(u.licenses) ? u.licenses : [];
+                  const lastSignIn = u.lastSignInDateTime || (u.signInActivity && u.signInActivity.lastSignInDateTime) || null;
+                %>
+                <tr>
+                  <td class="text-nowrap small text-muted"><%= u.employeeId || '—' %></td>
+                  <td>
+                    <a href="/admin/usuarios/<%= encodeURIComponent(u.id) %>" class="fw-semibold text-decoration-none">
+                      <%= u.displayName || '(Sin nombre)' %>
+                    </a>
+                    <% if (u.isRoom) { %>
+                      <span class="badge bg-info text-dark ms-1">Sala</span>
+                    <% } %>
+                    <% if (u.accountEnabled === false) { %>
+                      <span class="badge bg-danger ms-1">Deshabilitada</span>
+                    <% } %>
+                  </td>
+                  <td class="small text-muted"><%= u.userPrincipalName || u.mail || '—' %></td>
+                  <td class="small"><%= u.jobTitle || '—' %></td>
+                  <td class="small"><%= u.department || '—' %></td>
+                  <td class="small"><%= mgrName || '—' %></td>
+                  <td>
+                    <% if (userGroups.length === 0) { %>
+                      <span class="text-muted small">—</span>
+                    <% } else { %>
+                      <div class="d-flex flex-wrap gap-1">
+                        <% userGroups.forEach(function(g) { %>
+                          <span class="badge bg-light text-dark border fw-normal"><%= typeof g === 'string' ? g : (g.displayName || g.name || g.id) %></span>
+                        <% }); %>
+                      </div>
+                    <% } %>
+                  </td>
+                  <td>
+                    <% if (userLicenses.length === 0) { %>
+                      <span class="text-muted small">—</span>
+                    <% } else { %>
+                      <div class="d-flex flex-wrap gap-1">
+                        <% userLicenses.forEach(function(lic) { %>
+                          <span class="badge bg-secondary fw-normal"><%= typeof lic === 'string' ? lic : (lic.name || lic.skuPartNumber || lic.skuId) %></span>
+                        <% }); %>
+                      </div>
+                    <% } %>
+                  </td>
+                  <td class="text-nowrap small">
+                    <%= lastSignIn ? formatShortDate(lastSignIn) : (signInsKnown ? 'Nunca' : '—') %>
+                  </td>
+                  <td class="text-end text-nowrap">
+                    <a href="/admin/usuarios/<%= encodeURIComponent(u.id) %>" class="btn btn-outline-primary btn-sm">Editar</a>
+                  </td>
+                </tr>
+              <% }); %>
+            </tbody>
+          </table>
+        </div>
+      <% } %>
+    </div>
+  </div>
+</main>
+
+<%- include('partials/footer') %>

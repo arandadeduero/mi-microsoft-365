@@ -3,9 +3,10 @@
  */
 
 const { compareEs } = require('./formatters');
+const { isRoomUser } = require('./adminUsersTools');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const IDLE_DAYS = 90;
+const IDLE_DAYS = 30;
 
 // The last successful one when Graph gives it (since December 2023); the last
 // attempt, interactive or not, otherwise
@@ -22,7 +23,7 @@ const daysSince = (date, now) => Math.floor((now - new Date(date).getTime()) / D
  * @param {Object} options - signInsKnown, mfa (userRegistrationDetails or null), passwordMaxAgeDays, now
  * @returns {Object} Lists of accounts, each with why it is there
  */
-function reviewAccounts(users, { signInsKnown = false, mfa = null, passwordMaxAgeDays = null, now = Date.now() } = {}) {
+function reviewAccounts(users, { signInsKnown = false, mfa = null, passwordMaxAgeDays = null, roomEmails = null, now = Date.now() } = {}) {
   const mfaById = mfa ? new Map(mfa.map(entry => [entry.id, entry])) : null;
   const person = (user, note) => ({ id: user.id, name: user.displayName || user.userPrincipalName, username: user.userPrincipalName, note });
 
@@ -32,9 +33,14 @@ function reviewAccounts(users, { signInsKnown = false, mfa = null, passwordMaxAg
   const enabledWithoutLicense = [];
   const withoutMfa = mfa ? [] : null;
   let total = 0;
+  let guests = 0;
 
   for (const user of users) {
-    if (user.userType === 'Guest') continue;
+    if (user.userType === 'Guest') {
+      guests += 1;
+      continue;
+    }
+    if (isRoomUser(user, roomEmails)) continue;
     total += 1;
     const isLicensed = (user.assignedLicenses || []).length > 0;
 
@@ -75,7 +81,7 @@ function reviewAccounts(users, { signInsKnown = false, mfa = null, passwordMaxAg
   const sortByName = (list) => list && list.sort((a, b) => compareEs(a.name, b.name));
   return {
     total,
-    guests: users.length - total,
+    guests,
     idle: sortByName(idle),
     expiredPassword: sortByName(expiredPassword),
     disabledWithLicense: sortByName(disabledWithLicense),
@@ -97,6 +103,7 @@ function describeLicenseStock(skus, skuNames) {
       const used = sku.consumedUnits || 0;
       const left = total - used;
       return {
+        skuId: sku.skuId || null,
         code: sku.skuPartNumber,
         name: skuNames[sku.skuPartNumber] || sku.skuPartNumber,
         total,

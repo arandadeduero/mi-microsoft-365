@@ -1,0 +1,21 @@
+<%
+  const tab = typeof activeTab !== 'undefined' ? activeTab : 'directorio';
+  const navItems = [
+    { id: 'directorio', label: 'Directorio', href: '/admin/usuarios' },
+    { id: 'atencion', label: 'Cuentas con atención', href: '/admin/usuarios/atencion' },
+    { id: 'excel', label: 'Excel (validar, sincronizar, importar)', href: '/admin/usuarios/excel' },
+    { id: 'responsables', label: 'Responsables y grupos', href: '/admin/usuarios/responsables' },
+    { id: 'calidad', label: 'Calidad de datos', href: '/admin/usuarios/calidad' },
+  ];
+%>
+<ul class="nav nav-pills gap-2 mb-4" aria-label="Secciones de gestión de usuarios">
+  <% navItems.forEach(function(item) { %>
+    <li class="nav-item">
+      <a
+        href="<%= item.href %>"
+        class="nav-link <%= tab === item.id ? 'active' : '' %>"
+        <% if (tab === item.id) { %>aria-current="page"<% } %>
+      ><%= item.label %></a>
+    </li>
+  <% }); %>
+</ul>

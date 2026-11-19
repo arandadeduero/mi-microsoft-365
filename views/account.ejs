@@ -34,7 +34,7 @@
       <% if (owned.licenses.length > 0) { %>
         <p>
           Tu licencia:
-          <% owned.licenses.forEach(function(license, index) { %><% if (index > 0) { %>, <% } %><strong><%= license.name %></strong><% if (license.name !== license.code) { %> <span class="text-muted small">(<%= license.code %>)</span><% } %><% }); %>
+          <% owned.licenses.forEach(function(license, index) { %><% if (index > 0) { %>, <% } %><strong title="<%= license.code %>"><%= license.name %></strong><% }); %>
         </p>
         <% if (owned.apps.length > 0) { %>
           <p class="text-muted">Con ella puedes usar:</p>

@@ -110,10 +110,11 @@
             <a href="/ayuda" class="nav-link <%= page === 'help' ? 'active' : '' %>">Ayuda</a>
           </li>
           <% if (admin) { %>
+          <% const isUsersAdmin = here === '/admin/cuentas' || here === '/admin/usuarios' || here.startsWith('/admin/usuarios/'); %>
           <li class="nav-item dropdown">
-            <a href="/admin/audit" class="<%= groupClass('audit') %> nav-link-admin" role="button" data-bs-toggle="dropdown" aria-expanded="false">Administración</a>
+            <a href="/admin/usuarios" class="<%= groupClass('audit') %> nav-link-admin" role="button" data-bs-toggle="dropdown" aria-expanded="false">Administración</a>
             <ul class="dropdown-menu">
-              <li><a class="<%= itemClass('/admin/cuentas') %>" href="/admin/cuentas">Cuentas que necesitan atención</a></li>
+              <li><a class="dropdown-item<%= isUsersAdmin ? ' active' : '' %>" href="/admin/usuarios">Usuarios</a></li>
               <li><a class="<%= itemClass('/admin/licencias') %>" href="/admin/licencias">Licencias</a></li>
               <li><a class="<%= itemClass('/admin/solicitudes') %>" href="/admin/solicitudes">Solicitudes pendientes</a></li>
               <li><a class="<%= itemClass('/admin/salas') %>" href="/admin/salas">Ocupación de salas</a></li>
