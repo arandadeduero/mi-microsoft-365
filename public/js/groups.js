@@ -34,9 +34,13 @@
     modal().show();
   }
 
+  const submitBtn = document.getElementById('submitGroupRequestBtn');
+
   async function submitRequest() {
+    if (submitBtn.disabled) return;
     const groups = selected();
     if (groups.length === 0) return;
+    window.setButtonLoading?.(submitBtn, true);
     try {
       const response = await fetch('/api/group-access-request', {
         method: 'POST',
@@ -53,6 +57,8 @@
     } catch (error) {
       console.error('Error sending request:', error);
       window.alert('No se pudo enviar la solicitud. Inténtalo de nuevo.');
+    } finally {
+      window.setButtonLoading?.(submitBtn, false);
     }
   }
 
@@ -60,7 +66,7 @@
     if (event.target.classList?.contains('group-checkbox')) updateSelection();
   });
   sendButton.addEventListener('click', openDialog);
-  document.getElementById('submitGroupRequestBtn').addEventListener('click', submitRequest);
+  submitBtn.addEventListener('click', submitRequest);
   document.getElementById('closeDialogBtn').addEventListener('click', () => modal().hide());
   updateSelection();
 })();
