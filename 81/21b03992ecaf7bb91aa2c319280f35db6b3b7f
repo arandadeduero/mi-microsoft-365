@@ -1,0 +1,55 @@
+views/internal-requests.ejs
+  s_fce2362ad8a293::t_7f809e30298ef8 1-49
+routes/team.js
+  s_fce2362ad8a293::t_43ac830b196aef 19,45
+README.md
+  s_fce2362ad8a293::t_ba1dcb5d20d772 11,523,596-597
+.env.example
+  s_fce2362ad8a293::t_7f809e30298ef8 51-54
+test/authenticated.test.js
+  s_fce2362ad8a293::t_fb50ed6b512786 100
+services/requestForm.js
+  s_fce2362ad8a293::t_43ac830b196aef 1-32
+server.js
+  s_fce2362ad8a293::t_7f809e30298ef8 30,188
+views/internal-request-sent.ejs
+  s_fce2362ad8a293::t_7f809e30298ef8 1-25
+views/partials/header.ejs
+  s_fce2362ad8a293::t_7f809e30298ef8 105-107
+config/auditEvents.js
+  s_fce2362ad8a293::t_7f809e30298ef8 42
+AGENTS.md
+  s_fce2362ad8a293::t_8ca65e2794e8ad 45
+  s_fce2362ad8a293::t_2a1a0bc16f3093 41
+  s_fce2362ad8a293::t_9a757b86c69b1d 48
+  s_fce2362ad8a293::t_ba1dcb5d20d772 29
+  s_fce2362ad8a293::t_17bc4af7a082a3 43,46
+config/internalRequests.js
+  s_fce2362ad8a293::t_7f809e30298ef8 1-26
+config/appConfig.js
+  s_fce2362ad8a293::t_7f809e30298ef8 40-43
+routes/internalRequests.js
+  s_fce2362ad8a293::t_7f809e30298ef8 1-79
+views/partials/request-fields.ejs
+  s_fce2362ad8a293::t_43ac830b196aef 1-16
+test/internal-requests.test.js
+  s_fce2362ad8a293::t_fb50ed6b512786 1-105
+views/team.ejs
+  s_fce2362ad8a293::t_43ac830b196aef 56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8121b03992ecaf7bb91aa2c319280f35db6b3b7f",
+  "prompts": {},
+  "sessions": {
+    "s_fce2362ad8a293": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "abbfdd8e-3213-4c40-8035-e7366626bc8b",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Guillermo López <willyaranda@gmail.com>"
+    }
+  }
+}
