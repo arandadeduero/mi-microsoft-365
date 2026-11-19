@@ -1,0 +1,19 @@
+test/no-sharing-links.test.js
+  s_fce2362ad8a293::t_d3a5ea5949583f 2,14-15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bc2609ed9c40b46b0306cedf41479ed2eaf89c63",
+  "prompts": {},
+  "sessions": {
+    "s_fce2362ad8a293": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "abbfdd8e-3213-4c40-8035-e7366626bc8b",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Guillermo López <willyaranda@gmail.com>"
+    }
+  }
+}
