@@ -57,9 +57,9 @@ test.beforeEach(() => {
 });
 
 test.serial('GET / renders the profile of the signed-in user', async t => {
-  http.on('get', '/v1.0/me', { displayName: 'Alice Example', mail: 'alice@arandadeduero.es', jobTitle: 'Tecnica' });
+  http.on('get', '/v1.0/me', { displayName: 'Alice Example', mail: 'alice@arandadeduero.es', jobTitle: 'Tecnica', preferredLanguage: 'es-ES' });
   http.on('get', '/me/memberOf', { value: [{ id: 'g2', displayName: 'Obras' }] });
-  http.on('get', '/me/manager', { displayName: 'Boss Person', mail: 'boss@arandadeduero.es' });
+  http.on('get', '/me/manager', { id: 'boss-id', displayName: 'Boss Person', mail: 'boss@arandadeduero.es' });
 
   const res = await agent.get('/').expect(200);
 
@@ -68,11 +68,26 @@ test.serial('GET / renders the profile of the signed-in user', async t => {
   t.true(res.text.includes('Obras'));
   t.true(res.text.includes('Boss Person'));
   t.true(res.text.includes('/images/default-avatar.svg'));
+  // Manager has Outlook Web compose link, Teams chat button, and avatar fallback; preferredLanguage is omitted
+  t.true(res.text.includes('https://outlook.office.com/mail/deeplink/compose?to=boss%40arandadeduero.es'));
+  t.true(res.text.includes('https://teams.microsoft.com/l/chat/0/0?users=boss%40arandadeduero.es'));
+  t.true(res.text.includes('Abrir Teams'));
+  t.false(res.text.includes('Idioma preferido'));
   // Name of the portal in the menu, and the intranet one click away
   t.true(res.text.includes('<a class="navbar-brand fw-semibold" href="/">Mi Microsoft 365</a>'));
   t.regex(res.text, /Intranet del Ayuntamiento[\s\S]*?href="https:\/\/aytoarandaduero\.sharepoint\.com" target="_blank" rel="noopener" class="btn btn-primary/);
   t.false(res.text.includes(ADMIN_BANNER));
   t.is(http.callsTo('get', '/v1.0/me')[0].config.headers.Authorization, 'Bearer user-token');
+});
+
+test.serial('GET / renders the manager photo when Graph returns one', async t => {
+  http.on('get', '/v1.0/me', { displayName: 'Alice Example', mail: 'alice@arandadeduero.es' });
+  http.on('get', '/me/manager', { id: 'boss-id', displayName: 'Boss Person', mail: 'boss@arandadeduero.es' });
+  http.on('get', '/users/boss-id/photo/$value', Buffer.from('fake-manager-jpeg'));
+
+  const res = await agent.get('/').expect(200);
+
+  t.true(res.text.includes(`data:image/jpeg;base64,${Buffer.from('fake-manager-jpeg').toString('base64')}`));
 });
 
 test.serial('the menu groups the pages, names the user, and only shows what applies to them', async t => {
@@ -412,12 +427,21 @@ test.serial('POST /profile/me/edit renders the error page when Graph rejects the
   t.is(http.callsTo('patch', '/v1.0/me').length, 1);
 });
 
-test.serial('GET /api/users returns the organization users', async t => {
-  http.on('get', '/v1.0/users', { value: [{ id: 'u1', displayName: 'Alice' }] });
+test.serial('GET /api/users returns only active licensed member users (excluding rooms, shared mailboxes and self)', async t => {
+  http.on('get', '/v1.0/users', {
+    value: [
+      { id: 'alice-id', displayName: 'Alice Example', accountEnabled: true, userType: 'Member', assignedLicenses: [{ skuId: 's1' }] },
+      { id: 'u1', displayName: 'Boss', mail: 'boss@arandadeduero.es', accountEnabled: true, userType: 'Member', assignedLicenses: [{ skuId: 's1' }] },
+      { id: 'room-1', displayName: 'Sala de Plenos', accountEnabled: false, userType: 'Member', assignedLicenses: [] },
+      { id: 'shared-1', displayName: 'Alcaldía', accountEnabled: false, userType: 'Member', assignedLicenses: [] },
+      { id: 'disabled-1', displayName: 'Baja', accountEnabled: false, userType: 'Member', assignedLicenses: [{ skuId: 's1' }] },
+      { id: 'guest-1', displayName: 'Externo', accountEnabled: true, userType: 'Guest', assignedLicenses: [{ skuId: 's1' }] },
+    ],
+  });
 
   const res = await agent.get('/api/users').expect(200);
 
-  t.deepEqual(res.body, { success: true, users: [{ id: 'u1', displayName: 'Alice' }] });
+  t.deepEqual(res.body, { success: true, users: [{ id: 'u1', displayName: 'Boss', mail: 'boss@arandadeduero.es' }] });
 });
 
 test.serial('POST /api/manager-correction requires a manager', async t => {
