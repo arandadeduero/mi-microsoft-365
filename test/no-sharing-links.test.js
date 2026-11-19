@@ -1,5 +1,5 @@
 /**
- * Sharing links (SharePoint/OneDrive "/:x:/", "/:f:/"...) give access to files,
+ * Sharing links (SharePoint/OneDrive "/:x:/s/", "/:f:/g/"...) give access to files,
  * and this repository is public: they live in .env only (USERS_EXCEL_URL,
  * WELCOME_GUIDE_URL), never in the code or its defaults.
  */
@@ -11,7 +11,8 @@ const path = require('path');
 const test = require('ava').default;
 
 const ROOT = path.join(__dirname, '..');
-const SHARING_LINK = /sharepoint\.com\/:[a-z]:\//i;
+// The shape of a sharing link ("/:x:/s/...", "/:f:/g/..."), whatever the host
+const SHARING_LINK = /\/:[a-z]:\/[a-z]\//i;
 
 function sourceFiles(dir) {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
