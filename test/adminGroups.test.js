@@ -12,7 +12,7 @@ const test = require('ava').default;
 const request = require('supertest');
 const { stubAxios, stubMsal, signInAgent, getCsrfToken, auditEvents, httpError } = require('./helpers/stubs');
 const { resetGraphCaches } = require('../services/graphService');
-const { describeAdminGroup, diffGroupEdit, toMailAlias, validateNewGroup, parseAddressList, MAX_BULK } = require('../services/adminGroups');
+const { describeAdminGroup, diffGroupEdit, toMailAlias, validateNewGroup, parseAddressList, reviewGroups, MAX_BULK } = require('../services/adminGroups');
 
 const http = stubAxios();
 const msal = stubMsal();
@@ -104,7 +104,7 @@ test('editing sends only what changed, and an emptied description becomes null',
 
 test.serial('non-admins receive 403 on every /admin/grupos route', async t => {
   const { agent, csrf } = await signInAs(t, USER, { admin: false });
-  for (const p of ['/admin/grupos', '/admin/grupos-distribucion', '/admin/grupos/nuevo', `/admin/grupos/${GID_INFO}`]) {
+  for (const p of ['/admin/grupos', '/admin/grupos/atencion', '/admin/grupos-distribucion', '/admin/grupos/nuevo', `/admin/grupos/${GID_INFO}`]) {
     await agent.get(p).expect(403);
   }
   await agent.post('/admin/grupos').set('X-CSRF-Token', csrf).type('form').send({ displayName: 'X' }).expect(403);
@@ -373,4 +373,63 @@ test.serial('non-administrators cannot use the bulk add', async t => {
   await agent.post(`${BULK(GID_INFO)}/vista-previa`).set('X-CSRF-Token', csrf).type('form').send({ addresses: 'a@arandadeduero.es' }).expect(403);
   await agent.post(BULK(GID_INFO)).set('X-CSRF-Token', csrf).type('form').send({ userIds: [UID_ANA] }).expect(403);
   t.is(http.callsTo('post', `/v1.0/groups/${GID_INFO}/members/$ref`).length, 0);
+});
+
+test('groups are sorted by what they lack, and a group that could not be read is never flagged', t => {
+  const g = (id) => ({ id, displayName: id });
+  const checks = new Map([
+    ['sin', { owners: 0, hasMembers: true }],
+    ['uno', { owners: 1, hasMembers: true }],
+    ['vacio', { owners: 2, hasMembers: false }],
+    ['uno-y-vacio', { owners: 1, hasMembers: false }],
+    ['bien', { owners: 2, hasMembers: true }],
+    ['medio', { owners: null, hasMembers: false }], // owners unreadable: only what is known is said
+    ['nada', { owners: null, hasMembers: null }],
+  ]);
+  const review = reviewGroups(['sin', 'uno', 'vacio', 'uno-y-vacio', 'bien', 'medio', 'nada', 'falta'].map(g), checks);
+  t.deepEqual(review.noOwner.map(x => x.id), ['sin']);
+  t.deepEqual(review.oneOwner.map(x => x.id), ['uno', 'uno-y-vacio']);
+  t.deepEqual(review.empty.map(x => x.id), ['vacio', 'uno-y-vacio', 'medio']);
+  t.is(review.unknown, 2); // nothing could be read ('nada'), or no answer at all ('falta')
+});
+
+test.serial('the attention page lists groups with no owner, one owner or nobody inside, and leaves out the read-only ones', async t => {
+  const { agent } = await signInAs(t, ADMIN, { admin: true });
+  const G = (n) => `${String(n).repeat(8)}-${String(n).repeat(4)}-${String(n).repeat(4)}-${String(n).repeat(4)}-${String(n).repeat(12)}`;
+  const [A, B, C, D] = [G(1), G(2), G(3), G(4)];
+  const unified = (id, displayName) => ({ id, displayName, mailEnabled: true, securityEnabled: false, groupTypes: ['Unified'], visibility: 'Private' });
+  http.on('get', '/v1.0/groups', { value: [
+    unified(A, 'Sin dueño'),
+    { id: B, displayName: 'Un dueño y vacío', mailEnabled: false, securityEnabled: true, groupTypes: [] },
+    unified(C, 'Todo en orden'),
+    unified(D, 'Sin respuesta'),
+    GROUPS[GID_DYN],
+    GROUPS[GID_LIST],
+  ] });
+  const answers = { [A]: [[], [1]], [B]: [[1], []], [C]: [[1, 2], [1]] };
+  http.on('post', '/v1.0/$batch', ({ data }) => ({
+    responses: data.requests.map((r) => {
+      const [kind, id] = r.id.split(':');
+      const answer = answers[id];
+      return answer
+        ? { id: r.id, status: 200, body: { value: answer[kind === 'o' ? 0 : 1] } }
+        : { id: r.id, status: 500, body: {} };
+    }),
+  }));
+
+  const res = await agent.get('/admin/grupos/atencion').expect(200);
+  const section = (title) => res.text.split(`<h2 class="h5">${title}`)[1].split('</table>')[0];
+
+  t.regex(section('Sin propietario'), /Sin dueño/);
+  t.notRegex(section('Sin propietario'), /Un dueño y vacío/);
+  t.regex(section('Con un solo propietario'), /Un dueño y vacío/);
+  t.regex(section('Vacíos'), /Un dueño y vacío/);
+  t.notRegex(res.text, /Todo en orden/);
+  // Not read is not "none": it is said, and the group is not in any list
+  t.notRegex(res.text, /Sin respuesta/);
+  t.regex(res.text, /No se ha podido comprobar 1 grupo/);
+  // Dynamic groups and Exchange lists are not ours to fix
+  t.notRegex(res.text, /Todos los de Obras|Lista prensa/);
+  t.regex(res.text, /los <strong>4<\/strong> grupos que se pueden gestionar/);
+  t.regex((await agent.get('/admin/grupos').expect(200)).text, /href="\/admin\/grupos\/atencion"/);
 });

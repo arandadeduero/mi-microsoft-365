@@ -154,7 +154,30 @@ function parseAddressList(text) {
   return { addresses, invalid };
 }
 
+/**
+ * Sort groups into the ones that need a look: nobody owns them, only one person
+ * does, or nobody is in them. A group whose owners and members could not be read
+ * is counted apart and never flagged ("could not check" is not "has none").
+ * @param {Array} groups - Groups the portal can manage
+ * @param {Map<string, {owners: number|null, hasMembers: boolean|null}>} checks - From getGroupsChecks
+ */
+function reviewGroups(groups, checks) {
+  const review = { noOwner: [], oneOwner: [], empty: [], unknown: 0 };
+  for (const group of groups) {
+    const check = checks.get(group.id);
+    if (!check || (check.owners === null && check.hasMembers === null)) {
+      review.unknown += 1;
+      continue;
+    }
+    if (check.owners === 0) review.noOwner.push(group);
+    else if (check.owners === 1) review.oneOwner.push(group);
+    if (check.hasMembers === false) review.empty.push(group);
+  }
+  return review;
+}
+
 module.exports = {
+  reviewGroups,
   MAX_BULK,
   parseAddressList,
   GROUP_PREFIX,

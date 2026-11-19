@@ -2036,6 +2036,41 @@ async function updateGroup(accessToken, groupId, patch) {
 }
 
 /**
+ * For many groups at once: how many owners each has (0, 1 or 2 meaning "2 or more")
+ * and whether it has any member. Two reads per group, in batches of 20 run side
+ * by side; one that cannot be read leaves null, never "none".
+ * @param {string} accessToken - Valid access token
+ * @param {Array<string>} groupIds
+ * @returns {Promise<Map<string, {owners: number|null, hasMembers: boolean|null}>>}
+ */
+async function getGroupsChecks(accessToken, groupIds) {
+  const requests = groupIds.flatMap(id => [
+    { id: `o:${id}`, method: 'GET', url: `/groups/${encodeURIComponent(id)}/owners?$select=id&$top=2` },
+    { id: `m:${id}`, method: 'GET', url: `/groups/${encodeURIComponent(id)}/members?$select=id&$top=1` },
+  ]);
+  const chunks = [];
+  for (let i = 0; i < requests.length; i += GRAPH_BATCH_LIMIT) chunks.push(requests.slice(i, i + GRAPH_BATCH_LIMIT));
+
+  const responses = new Map();
+  await mapWithConcurrency(chunks, 4, async (chunk) => {
+    try {
+      for (const [id, response] of await graphBatch(accessToken, chunk)) responses.set(id, response);
+    } catch (error) {
+      if (error.graphStatus === 401) throw error;
+    }
+  });
+
+  const count = (id) => {
+    const response = responses.get(id);
+    return response && response.status === 200 && Array.isArray(response.body?.value) ? response.body.value.length : null;
+  };
+  return new Map(groupIds.map((id) => {
+    const members = count(`m:${id}`);
+    return [id, { owners: count(`o:${id}`), hasMembers: members === null ? null : members > 0 }];
+  }));
+}
+
+/**
  * Make a user an owner of a group (already being one is fine)
  * @param {string} accessToken - Valid access token
  * @param {string} groupId - Group ID
@@ -2102,6 +2137,7 @@ module.exports = {
   getUserDevices,
   getAllUsers,
   listAdminGroups,
+  getGroupsChecks,
   getAdminGroup,
   createGroup,
   updateGroup,
