@@ -1,0 +1,19 @@
+services/graphService.js
+  s_a991ffc6c2b878::t_2ac2677438aec7 1671,1846
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bbfe13aac38dbceaac1914cbd6ec88de9d2bade2",
+  "prompts": {},
+  "sessions": {
+    "s_a991ffc6c2b878": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "803183b1-8ef9-41d9-baa3-bf2865e8b235",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Guillermo López <willyaranda@gmail.com>"
+    }
+  }
+}
