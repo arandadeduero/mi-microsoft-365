@@ -423,17 +423,58 @@ test.serial('GET /account/sign-ins says when there are none, or when the log is 
 
 // -------------------------------------------------------- automatic replies
 
-test.serial("GET /firma shows the organization's generator with the person's details beside it", async t => {
-  http.on('get', '/v1.0/me', { displayName: 'Alice Example', jobTitle: 'Técnica', businessPhones: ['947500100'], mail: 'alice@arandadeduero.es' });
+test.serial('GET /firma makes the signature from the profile: local logo to look at, public logo to copy', async t => {
+  http.on('get', '/v1.0/me', { displayName: 'Alice Example', jobTitle: 'Técnica', department: 'Urbanismo', businessPhones: ['947500100'], mail: 'alice@arandadeduero.es' });
 
   const res = await agent.get('/firma').expect(200);
 
-  t.true(res.text.includes('<iframe src="https://arandadeduero.github.io/firmas-correo/?name=Alice+Example&amp;position=T%C3%A9cnica&amp;email=alice%40arandadeduero.es&amp;phone=947500100"'));
-  t.true(res.text.includes('<dd class="text-break">Alice Example</dd>'));
-  t.true(res.text.includes('<dd class="text-break">947500100</dd>'));
-  t.true(res.text.includes('falta el departamento'));
-  // The policy lets that one page be framed, and nothing else
-  t.true(res.headers['content-security-policy'].includes('frame-src https://arandadeduero.github.io;'));
+  t.true(res.text.includes('Concejalía de Urbanismo'));
+  t.true(res.text.includes('📱 947500100'));
+  t.true(res.text.includes('<option value="urbanismo" selected>'));
+  // The preview shows the logo from its public address, the same as the text to copy
+  t.true(res.text.includes('<img src="https://arandadeduero.github.io/firmas-correo/images/blanco/urbanismo.png"'));
+  t.false(res.text.includes('<iframe'));
+  const csp = res.headers['content-security-policy'];
+  t.true(csp.includes("frame-src 'none'"));
+  // Pages load nothing from other servers except the signature logos
+  t.true(csp.includes("img-src 'self' data: https://arandadeduero.github.io;"));
+});
+
+test.serial('GET /firma asks for the concejalía when the profile does not give one, and takes the chosen one', async t => {
+  http.on('get', '/v1.0/me', { displayName: 'Alice Example', jobTitle: 'Técnica', department: 'Algo que no existe', mail: 'alice@arandadeduero.es' });
+
+  const asking = await agent.get('/firma').expect(200);
+  t.true(asking.text.includes('Elige tu concejalía'));
+  t.false(asking.text.includes('id="signature-preview"'));
+
+  const chosen = await agent.get('/firma').query({ concejalia: 'cultura-biblioteca' }).expect(200);
+  t.true(chosen.text.includes('Concejalía de Cultura (Biblioteca)'));
+
+  // A key that is not in the list is not taken, not even the ones every object has
+  for (const concejalia of ['../../etc/passwd', 'constructor', '__proto__', 'toString']) {
+    const bogus = await agent.get('/firma').query({ concejalia }).expect(200);
+    t.true(bogus.text.includes('Elige tu concejalía'), concejalia);
+    t.false(bogus.text.includes('native code'), concejalia);
+  }
+});
+
+test.serial('GET /firma makes no signature when the profile is incomplete, and sends to edit it or to Informática', async t => {
+  http.on('get', '/v1.0/me', { displayName: 'Alice Example', department: 'Urbanismo', mail: 'alice@arandadeduero.es' });
+
+  const noPosition = await agent.get('/firma').expect(200);
+  t.true(noPosition.text.includes('Primero hay que completar tu perfil'));
+  t.true(noPosition.text.includes('Te falta el puesto'));
+  t.true(noPosition.text.includes('<a href="/profile/me/edit" class="btn btn-warning btn-sm">Editar mi perfil</a>'));
+  t.false(noPosition.text.includes('pídeselo a Informática'));
+  t.false(noPosition.text.includes('id="signature-preview"'));
+
+  // The name cannot be changed by the person: only Informática can fill it in
+  http.on('get', '/v1.0/me', { jobTitle: 'Técnica', department: 'Urbanismo', mail: 'alice@arandadeduero.es' });
+  const noName = await agent.get('/firma').expect(200);
+  t.true(noName.text.includes('Te falta el nombre'));
+  t.false(noName.text.includes('btn btn-warning btn-sm'));
+  t.true(noName.text.includes('pídeselo a Informática'));
+  t.false(noName.text.includes('id="signature-preview"'));
 });
 
 test.serial('GET /profile/me/auto-reply drops tags hidden inside other tags', async t => {
