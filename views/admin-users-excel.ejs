@@ -479,6 +479,18 @@
           const unchanged = typeof summary.unchanged === 'number' ? summary.unchanged : (typeof summary.noop === 'number' ? summary.noop : (countAction('unchanged') + countAction('noop') + countAction('skip')));
           const skippedLeaving = typeof summary.skippedLeaving === 'number' ? summary.skippedLeaving : (typeof plan.skippedLeaving === 'number' ? plan.skippedLeaving : (Array.isArray(plan.skippedLeaving) ? plan.skippedLeaving.length : 0));
           const errCount = typeof summary.errors === 'number' ? summary.errors : invalidRows.length;
+          // What changes first (creations, then updates), the rest collapsed
+          const rank = function(it) {
+            const a = (it.action || '').toLowerCase();
+            const m = it.managerChange;
+            if (a === 'create') return 0;
+            if (a === 'update' || (m && m.status === 'change')) return 1;
+            if (m && m.status === 'notfound') return 2;
+            return 3;
+          };
+          const itemName = function(it) { return it.displayName || (it.desired && it.desired.displayName) || it.name || '—'; };
+          const changingItems = items.filter(function(it) { return rank(it) < 3; }).sort(function(x, y) { return rank(x) - rank(y); });
+          const unchangedItems = items.filter(function(it) { return rank(it) === 3; });
         %>
         <hr class="my-4">
         <h3 class="h6 mb-3">Vista previa de la importación</h3>
@@ -522,7 +534,7 @@
           </div>
         <% } %>
 
-        <% if (items.length > 0) { %>
+        <% if (changingItems.length > 0) { %>
           <div class="table-responsive mb-3">
             <table class="table table-sm align-middle mb-0">
               <thead>
@@ -534,7 +546,7 @@
                 </tr>
               </thead>
               <tbody>
-                <% items.forEach(function(item) { %>
+                <% changingItems.forEach(function(item) { %>
                   <%
                     const act = (item.action || '').toLowerCase();
                     const isCreate = act === 'create';
@@ -573,6 +585,19 @@
               </tbody>
             </table>
           </div>
+        <% } else if (items.length > 0) { %>
+          <p class="text-muted">Ninguna persona cambia.</p>
+        <% } %>
+
+        <% if (unchangedItems.length > 0) { %>
+          <details class="mb-3">
+            <summary class="text-muted">Sin cambios (<%= unchangedItems.length %>)</summary>
+            <ul class="small text-muted mb-0 mt-2">
+              <% unchangedItems.forEach(function(item) { %>
+                <li><%= itemName(item) %> <span class="text-muted"><%= item.upn || item.userPrincipalName || (item.desired && item.desired.userPrincipalName) || item.email || '' %></span></li>
+              <% }); %>
+            </ul>
+          </details>
         <% } %>
 
         <% if (importPreview.planId) { %>
