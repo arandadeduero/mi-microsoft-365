@@ -6,7 +6,7 @@ const { compareEs } = require('./formatters');
 const { isRoomUser } = require('./adminUsersTools');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const IDLE_DAYS = 30;
+const IDLE_DAYS = 14;
 
 // The last successful one when Graph gives it (since December 2023); the last
 // attempt, interactive or not, otherwise

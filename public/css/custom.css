@@ -911,6 +911,13 @@ h6,
   font-weight: 600;
 }
 
+.pill-note-white {
+  background-color: #ffffff !important;
+  color: #374151 !important;
+  border: 1px solid #d1d5db;
+  font-weight: 600;
+}
+
 .pill-note-orange {
   background-color: #f97316 !important;
   color: #ffffff !important;

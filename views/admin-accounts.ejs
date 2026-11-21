@@ -21,7 +21,7 @@
       };
       const signInsUnavailable = 'No se puede saber: ' + (signInsHints[signInsError] || 'el registro de inicios de sesión necesita Entra ID P1 y el permiso de aplicación AuditLog.Read.All.') + (signInsError ? ` (Graph responde ${signInsError}.)` : '');
       const sections = [
-        ['Sin iniciar sesión en 30 días', review.idle, signInsUnavailable],
+        ['Sin iniciar sesión en 14 días', review.idle, signInsUnavailable],
         ['Sin segundo factor', review.withoutMfa, 'No se puede saber: el informe de métodos de autenticación necesita Entra ID P1 y el permiso de aplicación UserAuthenticationMethod.Read.All.'],
         ['Contraseña caducada', review.expiredPassword, 'No se comprueba: no hay PASSWORD_MAX_AGE_DAYS configurado.'],
         ['Deshabilitadas con licencia', review.disabledWithLicense, null],
@@ -47,6 +47,9 @@
           if (days > 30) {
             return { cls: 'pill-note-yellow', label: text, bucket: 'over30', days };
           }
+          if (days > 14) {
+            return { cls: 'pill-note-white', label: text, bucket: 'over14', days };
+          }
         }
         return { cls: 'pill-note-severe', label: '⚠️ ' + text, bucket: 'other', days: 0 };
       }
@@ -56,6 +59,7 @@
         { key: 'over90', title: 'Más de 90 días sin iniciar sesión', cls: 'pill-note-severe', items: [] },
         { key: 'over60', title: 'Más de 60 días sin iniciar sesión (61–90 días)', cls: 'pill-note-orange', items: [] },
         { key: 'over30', title: 'Más de 30 días sin iniciar sesión (31–60 días)', cls: 'pill-note-yellow', items: [] },
+        { key: 'over14', title: 'Más de 14 días sin iniciar sesión (15–30 días)', cls: 'pill-note-white', items: [] },
       ];
       if (Array.isArray(review.idle)) {
         const byKey = new Map(idleBuckets.map(b => [b.key, b]));
@@ -74,7 +78,7 @@
 
     <div class="card shadow-sm border-0 app-panel mb-3">
       <div class="card-body p-4">
-        <h2 class="h5 mb-3">Sin iniciar sesión en más de 30 días<% if (review.idle) { %> <span class="badge bg-secondary"><%= review.idle.length %></span><% } %></h2>
+        <h2 class="h5 mb-3">Sin iniciar sesión en más de 14 días<% if (review.idle) { %> <span class="badge bg-secondary"><%= review.idle.length %></span><% } %></h2>
         <% if (!review.idle) { %>
           <p class="text-muted mb-0"><%= signInsUnavailable %></p>
         <% } else if (review.idle.length === 0) { %>
