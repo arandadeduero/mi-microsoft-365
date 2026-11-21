@@ -1,0 +1,19 @@
+views/admin-users-excel.ejs
+  s_a1323d7ba136c0::t_bb5b2daff888f8 482-493,537,549,588-600
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fb035f187066b7c75e56143cd850cb0c19a5fa23",
+  "prompts": {},
+  "sessions": {
+    "s_a1323d7ba136c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "11baeb65-3760-4d98-b0f5-8d73564f3aaf",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Guillermo López <willyaranda@gmail.com>"
+    }
+  }
+}
