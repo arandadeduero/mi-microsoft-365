@@ -1,0 +1,23 @@
+public/css/custom.css
+  s_a1323d7ba136c0::t_9e08cdeaa3af10 914-920
+services/accountReview.js
+  s_a1323d7ba136c0::t_5fc6fa84e308b9 9
+views/admin-accounts.ejs
+  s_a1323d7ba136c0::t_8780b8f0a26fe4 24,50-52,62,81
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ace31119152218a2f7b789ee8d21d9a74efb9028",
+  "prompts": {},
+  "sessions": {
+    "s_a1323d7ba136c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "11baeb65-3760-4d98-b0f5-8d73564f3aaf",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Guillermo López <willyaranda@gmail.com>"
+    }
+  }
+}
